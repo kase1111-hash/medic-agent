@@ -42,12 +42,14 @@ phases:
       event_bus: true
 
   phase_4_learning:
-    enabled: false
+    enabled: true
     description: "Learning System - outcome tracking and adaptation"
     features:
       outcome_database: true
       pattern_analysis: true
       adaptive_thresholds: true
+      feedback_collection: true
+      module_profiling: true
 
   phase_5_full_auto:
     enabled: false

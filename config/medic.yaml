@@ -95,16 +95,26 @@ interfaces:
 
 # Learning system (Phase 4+)
 learning:
-  enabled: false
+  enabled: true
   database:
-    type: "sqlite"  # sqlite | postgres
+    type: "sqlite"  # sqlite | postgres | memory
     path: "data/outcomes.db"
   analysis:
-    schedule: "weekly"  # daily | weekly
+    schedule: "daily"  # daily | weekly
     min_samples: 50
+    time_window_days: 30
+    false_positive_threshold: 0.3
+    success_rate_threshold: 0.7
+    auto_approve_accuracy_threshold: 0.9
   threshold_adjustment:
-    enabled: false
+    enabled: false  # Requires explicit approval
+    require_approval: true
     max_adjustment_percent: 10
+    cooldown_hours: 24
+    target_accuracy: 0.95
+  feedback:
+    auto_collect: true  # Collect from monitoring automatically
+    require_confirmation: false  # Auto-process simple feedback
 
 # Logging configuration
 logging:

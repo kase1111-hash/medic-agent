@@ -45,6 +45,17 @@ from core.risk import create_risk_assessor, RiskAssessor, AdvancedRiskAssessor
 from core.event_bus import create_event_bus, EventBus, EventType, Event
 from execution.auto_resurrect import create_auto_resurrector, AutoResurrectionManager
 
+# Phase 4 imports
+from learning.outcome_store import (
+    create_outcome_store, OutcomeStore, ResurrectionOutcome, OutcomeType
+)
+from learning.pattern_analyzer import create_pattern_analyzer, PatternAnalyzer
+from learning.threshold_adapter import create_threshold_adapter, ThresholdAdapter
+from learning.feedback import (
+    create_feedback_processor, create_automated_collector,
+    FeedbackProcessor, AutomatedFeedbackCollector
+)
+
 logger = get_logger("main")
 
 
@@ -77,6 +88,13 @@ class MedicAgent:
         self.risk_assessor: Optional[AdvancedRiskAssessor] = None
         self.event_bus: Optional[EventBus] = None
         self.auto_resurrector: Optional[AutoResurrectionManager] = None
+
+        # Phase 4 components (Learning)
+        self.outcome_store: Optional[OutcomeStore] = None
+        self.pattern_analyzer: Optional[PatternAnalyzer] = None
+        self.threshold_adapter: Optional[ThresholdAdapter] = None
+        self.feedback_processor: Optional[FeedbackProcessor] = None
+        self.automated_collector: Optional[AutomatedFeedbackCollector] = None
 
         # Runtime state
         self._running = False
@@ -134,6 +152,32 @@ class MedicAgent:
             self._setup_event_handlers()
 
             logger.info("Phase 3 components initialized")
+
+        # Create Phase 4 components (Learning)
+        learning_config = self.config.get("learning", {})
+        if learning_config.get("enabled", False):
+            self.outcome_store = create_outcome_store(self.config)
+            self.pattern_analyzer = create_pattern_analyzer(
+                self.outcome_store,
+                learning_config.get("analysis", {}),
+            )
+            self.threshold_adapter = create_threshold_adapter(
+                self.outcome_store,
+                self.config,
+            )
+            self.feedback_processor = create_feedback_processor(
+                self.outcome_store,
+                on_feedback_processed=self._on_feedback_processed,
+            )
+
+            # Set up automated feedback collection if monitoring is available
+            if self.monitor and learning_config.get("feedback", {}).get("auto_collect", True):
+                self.automated_collector = create_automated_collector(
+                    self.feedback_processor,
+                    self.outcome_store,
+                )
+
+            logger.info("Phase 4 learning components initialized")
 
         logger.info("All components initialized")
 
@@ -384,6 +428,66 @@ class MedicAgent:
 
         logger.info("Event handlers configured")
 
+    def _on_feedback_processed(self, feedback, updates: dict) -> None:
+        """Handle processed feedback from the learning system."""
+        logger.info(
+            "Feedback processed",
+            feedback_id=feedback.feedback_id,
+            outcome_id=feedback.outcome_id,
+            feedback_type=feedback.feedback_type.value,
+            updates=list(updates.keys()),
+        )
+
+        # If thresholds need adjustment, trigger analysis
+        if self.threshold_adapter and feedback.feedback_type.value in (
+            "outcome_correction", "decision_correction"
+        ):
+            # Schedule threshold analysis (don't block)
+            proposal = self.threshold_adapter.analyze_and_propose()
+            if proposal:
+                logger.info(
+                    "Threshold adjustment proposal created",
+                    proposal_id=proposal.proposal_id,
+                    adjustments=len(proposal.adjustments),
+                )
+
+    def _record_outcome(
+        self,
+        decision,
+        kill_report: KillReport,
+        was_auto_approved: bool = False,
+        request_id: Optional[str] = None,
+    ) -> Optional[str]:
+        """Record a resurrection outcome for learning."""
+        if not self.outcome_store:
+            return None
+
+        import uuid
+
+        outcome = ResurrectionOutcome(
+            outcome_id=str(uuid.uuid4()),
+            decision_id=decision.decision_id,
+            kill_id=kill_report.kill_id,
+            target_module=kill_report.target_module,
+            timestamp=datetime.utcnow(),
+            outcome_type=OutcomeType.UNDETERMINED,  # Will be updated by monitoring
+            original_risk_score=decision.risk_score,
+            original_confidence=decision.confidence,
+            original_decision=decision.outcome.value,
+            was_auto_approved=was_auto_approved,
+            metadata={"request_id": request_id} if request_id else {},
+        )
+
+        self.outcome_store.store_outcome(outcome)
+
+        logger.debug(
+            "Outcome recorded",
+            outcome_id=outcome.outcome_id,
+            kill_id=kill_report.kill_id,
+        )
+
+        return outcome.outcome_id
+
     def _log_observer_summary(self, decision) -> None:
         """Log observer mode summary of what would have happened."""
         from core.models import DecisionOutcome
@@ -441,6 +545,10 @@ class MedicAgent:
         # Close SIEM adapter
         if hasattr(self.siem_adapter, "close"):
             await self.siem_adapter.close()
+
+        # Close outcome store (Phase 4)
+        if self.outcome_store and hasattr(self.outcome_store, "close"):
+            self.outcome_store.close()
 
         # Log final stats
         uptime = (datetime.utcnow() - self._start_time).total_seconds() if self._start_time else 0
@@ -594,7 +702,7 @@ def main() -> int:
         "--version",
         "-v",
         action="version",
-        version="Medic Agent v3.0.0 (Phase 3 - Semi-Autonomous)",
+        version="Medic Agent v4.0.0 (Phase 4 - Learning System)",
     )
 
     args = parser.parse_args()
