@@ -45,4 +45,4 @@ commonLabels:
 
 images:
   - name: medic-agent
-    newTag: "7.0.0-dev"
+    newTag: "0.1.0-alpha-dev"

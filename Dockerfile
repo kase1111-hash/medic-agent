@@ -32,7 +32,7 @@ FROM python:3.11-slim as production
 # Labels
 LABEL org.opencontainers.image.title="Medic Agent"
 LABEL org.opencontainers.image.description="Autonomous resilience layer for Smith kill report evaluation"
-LABEL org.opencontainers.image.version="7.0.0"
+LABEL org.opencontainers.image.version="0.1.0-alpha"
 LABEL org.opencontainers.image.vendor="Medic Agent Team"
 
 # Create non-root user for security

@@ -142,7 +142,7 @@ class WebAPI:
         self.app = FastAPI(
             title="Medic Agent API",
             description="REST API for resurrection approval workflows and system management",
-            version="7.0.0",
+            version="0.1.0-alpha",
             docs_url="/docs",
             redoc_url="/redoc",
         )
@@ -170,7 +170,7 @@ class WebAPI:
             "data": data,
             "meta": {
                 "timestamp": datetime.utcnow().isoformat(),
-                "version": "7.0.0",
+                "version": "0.1.0-alpha",
             },
             "errors": errors or [],
         }

@@ -17,7 +17,12 @@ Medic Agent is an intelligent system that monitors kill events from Smith, evalu
 
 ## Current Version
 
-**v7.0.0** - All phases implemented (Foundation through Deployment & Operations)
+**v0.1.0-alpha** - Initial alpha release with all core features implemented
+
+[![Build Status](https://github.com/kase1111-hash/medic-agent/workflows/CI/badge.svg)](https://github.com/kase1111-hash/medic-agent/actions)
+[![License](https://img.shields.io/badge/license-proprietary-red.svg)](LICENSE.md)
+
+> **Note**: This is an alpha release. APIs and configurations may change.
 
 ## Quick Start
 
@@ -199,23 +204,40 @@ pytest tests/ -v
 # Run with coverage
 pytest tests/ --cov=. --cov-report=html
 
-# Run specific test category
-pytest tests/unit/ -v
-pytest tests/integration/ -v
+# Run specific test categories
+pytest tests/unit/ -v          # Unit tests
+pytest tests/integration/ -v   # Integration tests
+pytest tests/security/ -v      # Security tests
+pytest tests/performance/ -v   # Performance tests
+
+# Run fast tests only (skip slow/performance)
+pytest -m "not slow and not performance"
 ```
 
-## Phase Implementation Status
+## Security
 
-| Phase | Name | Status |
-|-------|------|--------|
-| 0 | Foundation | Complete |
-| 1 | Observer Mode | Complete |
-| 2 | Manual Mode | Complete |
-| 3 | Semi-Autonomous | Complete |
-| 4 | Learning System | Complete |
-| 5 | Full Autonomous | Complete |
-| 6 | Production Readiness | Complete |
-| 7 | Deployment & Operations | Complete |
+### Before Deployment
+
+1. **Create environment file** with secure credentials:
+   ```bash
+   cp .env.example .env
+   # Edit .env with your SIEM_API_KEY and GRAFANA_PASSWORD
+   ```
+
+2. **Configure CORS origins** in `config/medic.yaml`:
+   ```yaml
+   interfaces:
+     web:
+       cors_origins:
+         - "https://your-dashboard.example.com"
+   ```
+
+3. **Use external secrets** in Kubernetes (production):
+   ```bash
+   kubectl apply -k kubernetes/overlays/production/
+   ```
+
+See [CHANGELOG.md](CHANGELOG.md) for security notes and known limitations.
 
 ## Configuration Reference
 
@@ -223,15 +245,15 @@ See [docs/SPEC_SHEET.md](docs/SPEC_SHEET.md) for detailed configuration options 
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release notes and version history.
 
 ## License
 
-This project is proprietary software.
+This project is proprietary software. See [LICENSE.md](LICENSE.md).
 
 ## Support
 
