@@ -22,7 +22,17 @@ smith:
     response_topic: "medic.responses"
     consumer_group: "medic-agent"
   veto_protocol:
-    enabled: false
+    enabled: true
+    timeout_seconds: 30
+    max_vetos_per_hour: 10
+    cooldown_seconds: 300
+    min_fp_for_veto: 3
+    max_risk_for_veto: 0.3
+    require_human: false
+  negotiation:
+    enabled: true
+    request_topic: "medic.to_smith"
+    response_topic: "smith.to_medic"
     timeout_seconds: 30
 
 # SIEM integration
@@ -115,6 +125,33 @@ learning:
   feedback:
     auto_collect: true  # Collect from monitoring automatically
     require_confirmation: false  # Auto-process simple feedback
+
+# Edge case handling (Phase 5)
+edge_cases:
+  rapid_kill_threshold: 3
+  rapid_kill_window_seconds: 60
+  cascade_threshold: 5
+  cascade_window_seconds: 120
+  flap_threshold: 4
+  flap_window_minutes: 30
+  system_anomaly_threshold: 10
+  auto_pause_on_critical: true
+  auto_escalate: true
+
+# Self-monitoring (Phase 5)
+self_monitoring:
+  enabled: true
+  check_interval_seconds: 60
+  history_window_minutes: 60
+  latency_warning_ms: 500
+  latency_critical_ms: 2000
+  error_rate_warning: 0.05
+  error_rate_critical: 0.15
+  queue_warning: 50
+  queue_critical: 100
+  memory_warning_percent: 70.0
+  memory_critical_percent: 90.0
+  auto_remediate: true
 
 # Logging configuration
 logging:

@@ -56,6 +56,20 @@ from learning.feedback import (
     FeedbackProcessor, AutomatedFeedbackCollector
 )
 
+# Phase 5 imports (Full Autonomous)
+from integration.edge_case_manager import (
+    create_edge_case_manager, EdgeCaseManager, EdgeCase, EdgeCaseAction
+)
+from integration.smith_negotiator import (
+    create_smith_negotiator, SmithNegotiator, NegotiationType
+)
+from integration.veto_protocol import (
+    create_veto_protocol, VetoProtocol, VetoRequest, VetoDecision
+)
+from integration.self_monitor import (
+    create_self_monitor, SelfMonitor, HealthStatus
+)
+
 logger = get_logger("main")
 
 
@@ -95,6 +109,12 @@ class MedicAgent:
         self.threshold_adapter: Optional[ThresholdAdapter] = None
         self.feedback_processor: Optional[FeedbackProcessor] = None
         self.automated_collector: Optional[AutomatedFeedbackCollector] = None
+
+        # Phase 5 components (Full Autonomous)
+        self.edge_case_manager: Optional[EdgeCaseManager] = None
+        self.smith_negotiator: Optional[SmithNegotiator] = None
+        self.veto_protocol: Optional[VetoProtocol] = None
+        self.self_monitor: Optional[SelfMonitor] = None
 
         # Runtime state
         self._running = False
@@ -178,6 +198,46 @@ class MedicAgent:
                 )
 
             logger.info("Phase 4 learning components initialized")
+
+        # Create Phase 5 components (Full Autonomous)
+        if self.mode == "full_auto":
+            # Edge case manager
+            edge_case_config = self.config.get("edge_cases", {})
+            self.edge_case_manager = create_edge_case_manager(
+                config=edge_case_config,
+                on_edge_case_detected=self._on_edge_case_detected,
+                on_action_required=self._on_edge_case_action,
+            )
+
+            # Smith negotiator
+            smith_config = self.config.get("smith", {})
+            self.smith_negotiator = create_smith_negotiator(
+                config=smith_config.get("negotiation", {}),
+                message_sender=self._send_smith_message,
+            )
+
+            # Veto protocol (requires decision engine and outcome store)
+            veto_config = smith_config.get("veto_protocol", {})
+            if veto_config.get("enabled", False):
+                self.veto_protocol = create_veto_protocol(
+                    config=veto_config,
+                    decision_engine=self.decision_engine,
+                    outcome_store=self.outcome_store,
+                    on_veto_decision=self._on_veto_decision,
+                )
+
+            # Self-monitor
+            monitor_config = self.config.get("self_monitoring", {})
+            if monitor_config.get("enabled", True):
+                self.self_monitor = create_self_monitor(
+                    config=monitor_config,
+                    on_health_change=self._on_health_change,
+                    on_critical=self._on_critical_health,
+                )
+                # Start self-monitoring
+                await self.self_monitor.start()
+
+            logger.info("Phase 5 full autonomous components initialized")
 
         logger.info("All components initialized")
 
@@ -277,6 +337,8 @@ class MedicAgent:
             await self._handle_manual_mode(kill_report, siem_context, decision)
         elif self.mode == "semi_auto":
             await self._handle_semi_auto_mode(kill_report, siem_context, decision)
+        elif self.mode == "full_auto":
+            await self._handle_full_auto_mode(kill_report, siem_context, decision)
 
     async def _handle_manual_mode(
         self,
@@ -372,6 +434,109 @@ class MedicAgent:
             # Queue for manual review
             await self._handle_manual_mode(kill_report, siem_context, decision)
 
+    async def _handle_full_auto_mode(
+        self,
+        kill_report: KillReport,
+        siem_context,
+        decision,
+    ) -> None:
+        """Handle kill report in full autonomous mode with Smith collaboration."""
+        # Check for edge cases first
+        if self.edge_case_manager:
+            edge_case = await self.edge_case_manager.check_edge_cases(
+                kill_report, decision
+            )
+            if edge_case and edge_case.requires_action:
+                logger.warning(
+                    "Edge case detected",
+                    kill_id=kill_report.kill_id,
+                    edge_case_type=edge_case.case_type.value,
+                    severity=edge_case.severity.value,
+                )
+                # Handle according to recommended action
+                if edge_case.recommended_action == EdgeCaseAction.ESCALATE:
+                    await self._handle_manual_mode(kill_report, siem_context, decision)
+                    return
+                elif edge_case.recommended_action == EdgeCaseAction.PAUSE:
+                    logger.info("Pausing resurrection due to edge case")
+                    return
+                elif edge_case.recommended_action == EdgeCaseAction.CIRCUIT_BREAK:
+                    logger.warning("Circuit breaker activated, denying resurrection")
+                    return
+
+        # Perform advanced risk assessment
+        risk_assessment = None
+        if self.risk_assessor:
+            risk_assessment = self.risk_assessor.assess(kill_report, siem_context)
+
+        # Try Smith negotiation for borderline cases
+        if (self.smith_negotiator
+            and 0.4 <= decision.risk_score <= 0.7
+            and decision.outcome != DecisionOutcome.DENY):
+
+            negotiation = await self.smith_negotiator.request_pre_kill_consultation(
+                kill_id=kill_report.kill_id,
+                module_name=kill_report.target_module,
+                context={
+                    "risk_score": decision.risk_score,
+                    "kill_reason": kill_report.kill_reason.value,
+                    "siem_context": siem_context.to_dict() if siem_context else {},
+                },
+            )
+
+            if negotiation and negotiation.outcome:
+                logger.info(
+                    "Smith negotiation complete",
+                    kill_id=kill_report.kill_id,
+                    outcome=negotiation.outcome.value,
+                )
+
+        # Proceed with auto-resurrection if approved
+        if (decision.outcome in (DecisionOutcome.APPROVE_AUTO, DecisionOutcome.PENDING_REVIEW)
+            and self.auto_resurrector):
+
+            logger.info(
+                "Full-auto resurrection",
+                kill_id=kill_report.kill_id,
+                risk_score=decision.risk_score,
+            )
+
+            attempt = await self.auto_resurrector.attempt_resurrection(
+                kill_report, decision, risk_assessment
+            )
+
+            # Record outcome for learning
+            if self.outcome_store:
+                self._record_outcome(
+                    decision,
+                    kill_report,
+                    was_auto_approved=True,
+                    request_id=attempt.request_id if attempt else None,
+                )
+
+            # Emit resurrection event
+            if self.event_bus:
+                event_type = (
+                    EventType.RESURRECTION_COMPLETED
+                    if attempt.result.value == "success"
+                    else EventType.RESURRECTION_FAILED
+                )
+                await self.event_bus.emit_event(
+                    event_type,
+                    source="medic.full_auto",
+                    payload=attempt.to_dict(),
+                    correlation_id=kill_report.kill_id,
+                )
+
+            # If failed, try appeal with Smith
+            if (attempt.result.value != "success"
+                and self.smith_negotiator):
+                await self.smith_negotiator.appeal_kill_decision(
+                    kill_id=kill_report.kill_id,
+                    appeal_reason=f"Resurrection failed: {attempt.error_message}",
+                    evidence={"attempt": attempt.to_dict()},
+                )
+
     async def _handle_rollback(self, request_id: str, reason: str) -> None:
         """Handle rollback triggered by monitor."""
         logger.warning(
@@ -389,6 +554,96 @@ class MedicAgent:
                 source="medic.monitor",
                 payload={"request_id": request_id, "reason": reason},
             )
+
+        # Notify automated collector about rollback (Phase 4)
+        if self.automated_collector:
+            self.automated_collector.on_rollback_triggered(request_id, reason)
+
+    # Phase 5 callback handlers
+    def _on_edge_case_detected(self, edge_case: EdgeCase) -> None:
+        """Handle edge case detection."""
+        logger.warning(
+            "Edge case detected",
+            case_id=edge_case.case_id,
+            case_type=edge_case.case_type.value,
+            severity=edge_case.severity.value,
+            affected_modules=edge_case.affected_modules,
+        )
+
+        # Emit event if event bus available
+        if self.event_bus:
+            asyncio.create_task(
+                self.event_bus.emit_event(
+                    EventType.ANOMALY_DETECTED,
+                    source="medic.edge_case_manager",
+                    payload=edge_case.to_dict(),
+                )
+            )
+
+    async def _on_edge_case_action(self, edge_case: EdgeCase, action: EdgeCaseAction) -> None:
+        """Handle required action for edge case."""
+        logger.info(
+            "Edge case action required",
+            case_id=edge_case.case_id,
+            action=action.value,
+        )
+
+        if action == EdgeCaseAction.ALERT_OPERATOR:
+            # Could integrate with alerting system here
+            logger.warning(
+                "OPERATOR ALERT: Edge case requires attention",
+                case_type=edge_case.case_type.value,
+                details=edge_case.details,
+            )
+
+    def _on_veto_decision(self, veto_response) -> None:
+        """Handle veto decision from veto protocol."""
+        logger.info(
+            "Veto decision made",
+            request_id=veto_response.request_id,
+            decision=veto_response.decision.value,
+            reason=veto_response.reason.value if veto_response.reason else None,
+        )
+
+    def _on_health_change(self, status: HealthStatus, previous: HealthStatus) -> None:
+        """Handle health status change from self-monitor."""
+        logger.info(
+            "Agent health status changed",
+            new_status=status.value,
+            previous_status=previous.value,
+        )
+
+        # Emit health event
+        if self.event_bus:
+            asyncio.create_task(
+                self.event_bus.emit_event(
+                    EventType.ANOMALY_DETECTED if status == HealthStatus.DEGRADED else EventType.DECISION_MADE,
+                    source="medic.self_monitor",
+                    payload={
+                        "status": status.value,
+                        "previous": previous.value,
+                    },
+                )
+            )
+
+    async def _on_critical_health(self, reason: str) -> None:
+        """Handle critical health condition from self-monitor."""
+        logger.critical(
+            "CRITICAL: Agent health critical",
+            reason=reason,
+        )
+
+        # In critical state, switch to safe mode
+        if self.mode == "full_auto":
+            logger.warning("Switching to semi_auto mode due to critical health")
+            self.mode = "semi_auto"
+
+    async def _send_smith_message(self, topic: str, message: dict) -> Optional[dict]:
+        """Send message to Smith via the listener's connection."""
+        if self.listener and hasattr(self.listener, "send_message"):
+            return await self.listener.send_message(topic, message)
+        logger.warning("No message sender available for Smith communication")
+        return None
 
     def _setup_event_handlers(self) -> None:
         """Set up event handlers for Phase 3 event-driven architecture."""
@@ -550,6 +805,10 @@ class MedicAgent:
         if self.outcome_store and hasattr(self.outcome_store, "close"):
             self.outcome_store.close()
 
+        # Stop self-monitor (Phase 5)
+        if self.self_monitor:
+            await self.self_monitor.stop()
+
         # Log final stats
         uptime = (datetime.utcnow() - self._start_time).total_seconds() if self._start_time else 0
         logger.info(
@@ -702,7 +961,7 @@ def main() -> int:
         "--version",
         "-v",
         action="version",
-        version="Medic Agent v4.0.0 (Phase 4 - Learning System)",
+        version="Medic Agent v5.0.0 (Phase 5 - Full Autonomous)",
     )
 
     args = parser.parse_args()
