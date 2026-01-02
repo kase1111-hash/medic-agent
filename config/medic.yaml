@@ -1,0 +1,123 @@
+# Medic Agent Configuration
+# Version 1.0
+
+version: "1.0"
+
+# Operating mode
+# - observer: Log decisions but don't act (Phase 1)
+# - manual: Require human approval for all resurrections (Phase 2)
+# - semi_auto: Auto-approve low-risk, queue medium-risk (Phase 3)
+# - full_auto: Fully autonomous operation (Phase 5)
+mode:
+  current: "observer"
+  fallback: "observer"
+
+# Smith connection settings
+smith:
+  event_bus:
+    type: "redis"  # redis | rabbitmq | kafka | mock
+    host: "localhost"
+    port: 6379
+    topic: "smith.events.kill_notifications"
+    response_topic: "medic.responses"
+    consumer_group: "medic-agent"
+  veto_protocol:
+    enabled: false
+    timeout_seconds: 30
+
+# SIEM integration
+siem:
+  adapter: "rest"  # rest | grpc | mock
+  endpoint: "http://localhost:8080/siem"
+  auth:
+    type: "api_key"
+    key_env: "SIEM_API_KEY"
+  timeout_seconds: 30
+  retry:
+    max_attempts: 3
+    backoff_seconds: 2
+
+# Decision engine settings
+decision:
+  default_timeout_minutes: 60
+  confidence_threshold: 0.7
+  auto_approve:
+    enabled: false
+    max_risk_level: "low"
+    min_confidence: 0.85
+
+# Risk assessment thresholds
+risk:
+  thresholds:
+    minimal: 0.2
+    low: 0.4
+    medium: 0.6
+    high: 0.8
+  weights:
+    smith_confidence: 0.30
+    siem_risk_score: 0.25
+    false_positive_history: 0.20
+    module_criticality: 0.15
+    time_of_day: 0.10
+
+# Resurrection settings (Phase 2+)
+resurrection:
+  monitoring_duration_minutes: 30
+  health_check_interval_seconds: 30
+  max_retry_attempts: 2
+  rollback:
+    enabled: true
+    auto_trigger_on_anomaly: true
+    anomaly_threshold: 0.7
+
+# Human review interface (Phase 2+)
+interfaces:
+  cli:
+    enabled: true
+  web:
+    enabled: false
+    port: 8000
+    host: "0.0.0.0"
+  approval_queue:
+    max_pending: 100
+    timeout_hours: 24
+
+# Learning system (Phase 4+)
+learning:
+  enabled: false
+  database:
+    type: "sqlite"  # sqlite | postgres
+    path: "data/outcomes.db"
+  analysis:
+    schedule: "weekly"  # daily | weekly
+    min_samples: 50
+  threshold_adjustment:
+    enabled: false
+    max_adjustment_percent: 10
+
+# Logging configuration
+logging:
+  level: "INFO"
+  format: "text"  # json | text
+  outputs:
+    - type: "console"
+    - type: "file"
+      path: "logs/medic.log"
+      rotation: "daily"
+      retention_days: 30
+  structured_fields:
+    - "kill_id"
+    - "decision_id"
+    - "request_id"
+
+# Monitoring and metrics
+metrics:
+  enabled: true
+  exporter: "prometheus"
+  port: 9090
+  labels:
+    environment: "development"
+    service: "medic-agent"
+
+# Reports directory
+reports_dir: "reports"
