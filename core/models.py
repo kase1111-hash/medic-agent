@@ -2,6 +2,9 @@
 Medic Agent Data Models
 
 Core data structures for kill reports, SIEM responses, and resurrection decisions.
+
+Security: All user-provided input is validated to prevent injection attacks,
+path traversal, and resource exhaustion.
 """
 
 from dataclasses import dataclass, field
@@ -9,6 +12,16 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional, List, Dict, Any
 import uuid
+
+from core.validation import (
+    validate_module_name,
+    validate_instance_id,
+    validate_metadata,
+    validate_evidence_list,
+    validate_dependency_list,
+    validate_confidence_score,
+    ValidationError,
+)
 
 
 class KillReason(Enum):
@@ -103,9 +116,24 @@ class KillReport:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
-        """Validate kill report data."""
-        if not 0.0 <= self.confidence_score <= 1.0:
-            raise ValueError(f"confidence_score must be between 0.0 and 1.0, got {self.confidence_score}")
+        """Validate kill report data for security and correctness."""
+        # Validate module name (prevents path traversal, injection)
+        self.target_module = validate_module_name(self.target_module, "target_module")
+
+        # Validate instance ID (prevents path traversal, injection)
+        self.target_instance_id = validate_instance_id(self.target_instance_id, "target_instance_id")
+
+        # Validate confidence score
+        self.confidence_score = validate_confidence_score(self.confidence_score, "confidence_score")
+
+        # Validate evidence list (prevents resource exhaustion)
+        self.evidence = validate_evidence_list(self.evidence, "evidence")
+
+        # Validate dependencies (prevents resource exhaustion, validates format)
+        self.dependencies = validate_dependency_list(self.dependencies, "dependencies")
+
+        # Validate metadata (prevents resource exhaustion)
+        self.metadata = validate_metadata(self.metadata, "metadata")
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "KillReport":
