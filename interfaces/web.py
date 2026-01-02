@@ -9,9 +9,12 @@ Phase 6: Production Readiness - Complete REST API implementation.
 Security: Implements API key authentication and RBAC.
 """
 
+import asyncio
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from enum import Enum
+from typing import Any, Dict, List, Optional, Set
 from collections import defaultdict
+import json
 import time
 import os
 
@@ -49,15 +52,249 @@ _rate_limiter = RateLimiter(requests_per_minute=120)
 
 # Try to import FastAPI, but don't fail if not installed
 try:
-    from fastapi import FastAPI, HTTPException, Query, Body, Path, Request, Depends, Security
+    from fastapi import FastAPI, HTTPException, Query, Body, Path, Request, Depends, Security, WebSocket, WebSocketDisconnect
     from fastapi.responses import JSONResponse
     from fastapi.middleware.cors import CORSMiddleware
     from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.websockets import WebSocketState
     from pydantic import BaseModel, Field
     FASTAPI_AVAILABLE = True
 except ImportError:
     FASTAPI_AVAILABLE = False
     logger.warning("FastAPI not installed. Web interface unavailable.")
+
+
+class WebSocketEventType(str, Enum):
+    """Types of events that can be broadcast via WebSocket."""
+    QUEUE_UPDATE = "queue_update"
+    QUEUE_ITEM_ADDED = "queue_item_added"
+    QUEUE_ITEM_APPROVED = "queue_item_approved"
+    QUEUE_ITEM_DENIED = "queue_item_denied"
+    DECISION_MADE = "decision_made"
+    RESURRECTION_STARTED = "resurrection_started"
+    RESURRECTION_COMPLETED = "resurrection_completed"
+    RESURRECTION_FAILED = "resurrection_failed"
+    RESURRECTION_ROLLED_BACK = "resurrection_rolled_back"
+    MONITOR_STARTED = "monitor_started"
+    MONITOR_ANOMALY = "monitor_anomaly"
+    MONITOR_COMPLETED = "monitor_completed"
+    THRESHOLD_UPDATED = "threshold_updated"
+    SYSTEM_STATUS = "system_status"
+    HEARTBEAT = "heartbeat"
+
+
+class WebSocketManager:
+    """
+    Manages WebSocket connections for real-time updates.
+
+    Supports:
+    - Multiple client connections
+    - Topic-based subscriptions
+    - Broadcast and targeted messaging
+    - Automatic reconnection handling
+    """
+
+    def __init__(self):
+        # Active connections mapped by client ID
+        self._connections: Dict[str, WebSocket] = {}
+        # Subscriptions: topic -> set of client IDs
+        self._subscriptions: Dict[str, Set[str]] = defaultdict(set)
+        # Client metadata
+        self._client_metadata: Dict[str, Dict[str, Any]] = {}
+        # Lock for thread-safe operations
+        self._lock = asyncio.Lock()
+        # Heartbeat interval in seconds
+        self._heartbeat_interval = 30
+        # Heartbeat task
+        self._heartbeat_task: Optional[asyncio.Task] = None
+
+    async def connect(
+        self,
+        websocket: WebSocket,
+        client_id: str,
+        topics: Optional[List[str]] = None,
+    ) -> None:
+        """
+        Accept a new WebSocket connection.
+
+        Args:
+            websocket: The WebSocket connection
+            client_id: Unique client identifier
+            topics: Optional list of topics to subscribe to
+        """
+        await websocket.accept()
+
+        async with self._lock:
+            # Disconnect existing connection with same ID
+            if client_id in self._connections:
+                try:
+                    await self._connections[client_id].close()
+                except Exception:
+                    pass
+
+            self._connections[client_id] = websocket
+            self._client_metadata[client_id] = {
+                "connected_at": datetime.utcnow().isoformat(),
+                "topics": topics or ["all"],
+            }
+
+            # Subscribe to topics
+            subscribe_topics = topics or ["all"]
+            for topic in subscribe_topics:
+                self._subscriptions[topic].add(client_id)
+
+        logger.info(f"WebSocket client connected: {client_id}, topics: {topics or ['all']}")
+
+        # Start heartbeat task if not running
+        if self._heartbeat_task is None or self._heartbeat_task.done():
+            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+
+        # Send connection confirmation
+        await self.send_to_client(client_id, {
+            "type": "connected",
+            "client_id": client_id,
+            "topics": topics or ["all"],
+            "timestamp": datetime.utcnow().isoformat(),
+        })
+
+    async def disconnect(self, client_id: str) -> None:
+        """Disconnect and clean up a client connection."""
+        async with self._lock:
+            if client_id in self._connections:
+                del self._connections[client_id]
+
+            if client_id in self._client_metadata:
+                del self._client_metadata[client_id]
+
+            # Remove from all subscriptions
+            for topic_subscribers in self._subscriptions.values():
+                topic_subscribers.discard(client_id)
+
+        logger.info(f"WebSocket client disconnected: {client_id}")
+
+    async def subscribe(self, client_id: str, topics: List[str]) -> None:
+        """Subscribe a client to additional topics."""
+        async with self._lock:
+            for topic in topics:
+                self._subscriptions[topic].add(client_id)
+
+            if client_id in self._client_metadata:
+                current_topics = set(self._client_metadata[client_id].get("topics", []))
+                current_topics.update(topics)
+                self._client_metadata[client_id]["topics"] = list(current_topics)
+
+    async def unsubscribe(self, client_id: str, topics: List[str]) -> None:
+        """Unsubscribe a client from topics."""
+        async with self._lock:
+            for topic in topics:
+                self._subscriptions[topic].discard(client_id)
+
+            if client_id in self._client_metadata:
+                current_topics = set(self._client_metadata[client_id].get("topics", []))
+                current_topics.difference_update(topics)
+                self._client_metadata[client_id]["topics"] = list(current_topics)
+
+    async def send_to_client(self, client_id: str, message: Dict[str, Any]) -> bool:
+        """Send a message to a specific client."""
+        async with self._lock:
+            if client_id not in self._connections:
+                return False
+            websocket = self._connections[client_id]
+
+        try:
+            if websocket.client_state == WebSocketState.CONNECTED:
+                await websocket.send_json(message)
+                return True
+        except Exception as e:
+            logger.warning(f"Failed to send to client {client_id}: {e}")
+            await self.disconnect(client_id)
+
+        return False
+
+    async def broadcast(
+        self,
+        event_type: WebSocketEventType,
+        data: Dict[str, Any],
+        topic: Optional[str] = None,
+    ) -> int:
+        """
+        Broadcast a message to all connected clients or clients subscribed to a topic.
+
+        Args:
+            event_type: Type of event being broadcast
+            data: Event data
+            topic: Optional topic to filter recipients
+
+        Returns:
+            Number of clients that received the message
+        """
+        message = {
+            "type": event_type.value,
+            "data": data,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+        async with self._lock:
+            if topic:
+                # Send to topic subscribers and "all" subscribers
+                client_ids = self._subscriptions.get(topic, set()) | self._subscriptions.get("all", set())
+            else:
+                # Send to all clients
+                client_ids = set(self._connections.keys())
+
+            # Copy to avoid modification during iteration
+            client_ids = list(client_ids)
+
+        sent_count = 0
+        for client_id in client_ids:
+            if await self.send_to_client(client_id, message):
+                sent_count += 1
+
+        return sent_count
+
+    async def _heartbeat_loop(self) -> None:
+        """Send periodic heartbeats to keep connections alive."""
+        while True:
+            await asyncio.sleep(self._heartbeat_interval)
+
+            async with self._lock:
+                if not self._connections:
+                    break
+                client_ids = list(self._connections.keys())
+
+            message = {
+                "type": WebSocketEventType.HEARTBEAT.value,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
+            for client_id in client_ids:
+                try:
+                    await self.send_to_client(client_id, message)
+                except Exception:
+                    await self.disconnect(client_id)
+
+    def get_connection_count(self) -> int:
+        """Get the number of active connections."""
+        return len(self._connections)
+
+    def get_client_info(self) -> List[Dict[str, Any]]:
+        """Get info about all connected clients."""
+        return [
+            {"client_id": cid, **meta}
+            for cid, meta in self._client_metadata.items()
+        ]
+
+
+# Global WebSocket manager instance
+_ws_manager: Optional[WebSocketManager] = None
+
+
+def get_ws_manager() -> WebSocketManager:
+    """Get or create the global WebSocket manager."""
+    global _ws_manager
+    if _ws_manager is None:
+        _ws_manager = WebSocketManager()
+    return _ws_manager
 
 # Import authentication module
 try:
@@ -212,6 +449,7 @@ class WebAPI:
         self._add_request_size_middleware()
 
         self._setup_routes()
+        self._setup_dashboard()
 
     def _add_rate_limiting_middleware(self) -> None:
         """Add rate limiting middleware."""
@@ -346,6 +584,14 @@ class WebAPI:
 
         self.app.add_middleware(RequestSizeLimitMiddleware)
         logger.info(f"Request size limiting middleware enabled (max: {max_request_size} bytes)")
+
+    def _setup_dashboard(self) -> None:
+        """Set up the dashboard UI routes."""
+        try:
+            from interfaces.dashboard import setup_dashboard_routes
+            setup_dashboard_routes(self.app)
+        except ImportError as e:
+            logger.warning(f"Dashboard not available: {e}")
 
     def _wrap_response(self, data: Any, errors: Optional[List[str]] = None) -> Dict[str, Any]:
         """Wrap response in standard format."""
@@ -973,6 +1219,143 @@ class WebAPI:
             except ImportError:
                 return self._wrap_response({"error": "Metrics not available"})
 
+        # ==================== WebSocket Endpoints ====================
+
+        @app.websocket("/ws")
+        async def websocket_endpoint(
+            websocket: WebSocket,
+            client_id: Optional[str] = Query(None, description="Unique client ID"),
+            topics: Optional[str] = Query(None, description="Comma-separated topics to subscribe to"),
+        ):
+            """
+            WebSocket endpoint for real-time updates.
+
+            Connect with optional client_id and topics query parameters.
+            Topics: queue, decisions, resurrections, monitors, thresholds, system, all
+
+            Message format received:
+            {
+                "type": "event_type",
+                "data": {...},
+                "timestamp": "ISO-8601"
+            }
+
+            Commands you can send:
+            - {"action": "subscribe", "topics": ["topic1", "topic2"]}
+            - {"action": "unsubscribe", "topics": ["topic1"]}
+            - {"action": "ping"}
+            """
+            import uuid as uuid_module
+
+            ws_manager = get_ws_manager()
+
+            # Generate client ID if not provided
+            if not client_id:
+                client_id = str(uuid_module.uuid4())[:8]
+
+            # Parse topics
+            topic_list = topics.split(",") if topics else None
+
+            try:
+                await ws_manager.connect(websocket, client_id, topic_list)
+
+                # Handle incoming messages
+                while True:
+                    try:
+                        data = await websocket.receive_json()
+
+                        action = data.get("action")
+
+                        if action == "subscribe":
+                            new_topics = data.get("topics", [])
+                            if new_topics:
+                                await ws_manager.subscribe(client_id, new_topics)
+                                await ws_manager.send_to_client(client_id, {
+                                    "type": "subscribed",
+                                    "topics": new_topics,
+                                    "timestamp": datetime.utcnow().isoformat(),
+                                })
+
+                        elif action == "unsubscribe":
+                            remove_topics = data.get("topics", [])
+                            if remove_topics:
+                                await ws_manager.unsubscribe(client_id, remove_topics)
+                                await ws_manager.send_to_client(client_id, {
+                                    "type": "unsubscribed",
+                                    "topics": remove_topics,
+                                    "timestamp": datetime.utcnow().isoformat(),
+                                })
+
+                        elif action == "ping":
+                            await ws_manager.send_to_client(client_id, {
+                                "type": "pong",
+                                "timestamp": datetime.utcnow().isoformat(),
+                            })
+
+                        elif action == "get_status":
+                            # Return current system status
+                            stats = await self.queue.get_stats()
+                            await ws_manager.send_to_client(client_id, {
+                                "type": "system_status",
+                                "data": {
+                                    "mode": self.config.get("mode", "observer"),
+                                    "queue": stats,
+                                    "connections": ws_manager.get_connection_count(),
+                                    "uptime_seconds": round(
+                                        (datetime.utcnow() - self._start_time).total_seconds(), 1
+                                    ),
+                                },
+                                "timestamp": datetime.utcnow().isoformat(),
+                            })
+
+                    except json.JSONDecodeError:
+                        await ws_manager.send_to_client(client_id, {
+                            "type": "error",
+                            "message": "Invalid JSON format",
+                            "timestamp": datetime.utcnow().isoformat(),
+                        })
+
+            except WebSocketDisconnect:
+                await ws_manager.disconnect(client_id)
+            except Exception as e:
+                logger.error(f"WebSocket error for {client_id}: {e}")
+                await ws_manager.disconnect(client_id)
+
+        @app.get("/api/v1/websocket/clients", tags=["WebSocket"])
+        async def get_websocket_clients():
+            """Get information about connected WebSocket clients."""
+            ws_manager = get_ws_manager()
+            return self._wrap_response({
+                "clients": ws_manager.get_client_info(),
+                "count": ws_manager.get_connection_count(),
+            })
+
+        @app.post("/api/v1/websocket/broadcast", tags=["WebSocket"])
+        async def broadcast_message(
+            event_type: str = Body(..., embed=True, description="Event type"),
+            data: Dict[str, Any] = Body(..., embed=True, description="Event data"),
+            topic: Optional[str] = Body(None, embed=True, description="Target topic"),
+        ):
+            """Broadcast a message to WebSocket clients."""
+            ws_manager = get_ws_manager()
+
+            try:
+                # Validate event type
+                ws_event_type = WebSocketEventType(event_type)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid event type. Valid types: {[e.value for e in WebSocketEventType]}",
+                )
+
+            sent_count = await ws_manager.broadcast(ws_event_type, data, topic)
+            return self._wrap_response({
+                "status": "broadcast_sent",
+                "recipients": sent_count,
+                "event_type": event_type,
+                "topic": topic,
+            })
+
 
 def create_web_app(
     approval_queue: Any,
@@ -1024,3 +1407,182 @@ async def run_web_server(
     except ImportError:
         logger.error("uvicorn not installed. Install with: pip install uvicorn")
         raise
+
+
+# ==================== WebSocket Event Broadcasting Helpers ====================
+
+
+async def broadcast_queue_update(
+    item_id: str,
+    action: str,
+    data: Dict[str, Any],
+) -> int:
+    """
+    Broadcast a queue update event to WebSocket clients.
+
+    Args:
+        item_id: Queue item ID
+        action: Action performed (added, approved, denied)
+        data: Additional event data
+
+    Returns:
+        Number of clients that received the message
+    """
+    ws_manager = get_ws_manager()
+
+    event_map = {
+        "added": WebSocketEventType.QUEUE_ITEM_ADDED,
+        "approved": WebSocketEventType.QUEUE_ITEM_APPROVED,
+        "denied": WebSocketEventType.QUEUE_ITEM_DENIED,
+    }
+
+    event_type = event_map.get(action, WebSocketEventType.QUEUE_UPDATE)
+
+    return await ws_manager.broadcast(
+        event_type,
+        {"item_id": item_id, "action": action, **data},
+        topic="queue",
+    )
+
+
+async def broadcast_decision(
+    decision_id: str,
+    outcome: str,
+    data: Dict[str, Any],
+) -> int:
+    """
+    Broadcast a decision event to WebSocket clients.
+
+    Args:
+        decision_id: Decision ID
+        outcome: Decision outcome
+        data: Additional event data
+
+    Returns:
+        Number of clients that received the message
+    """
+    ws_manager = get_ws_manager()
+
+    return await ws_manager.broadcast(
+        WebSocketEventType.DECISION_MADE,
+        {"decision_id": decision_id, "outcome": outcome, **data},
+        topic="decisions",
+    )
+
+
+async def broadcast_resurrection_event(
+    request_id: str,
+    status: str,
+    data: Dict[str, Any],
+) -> int:
+    """
+    Broadcast a resurrection event to WebSocket clients.
+
+    Args:
+        request_id: Resurrection request ID
+        status: Resurrection status (started, completed, failed, rolled_back)
+        data: Additional event data
+
+    Returns:
+        Number of clients that received the message
+    """
+    ws_manager = get_ws_manager()
+
+    status_map = {
+        "started": WebSocketEventType.RESURRECTION_STARTED,
+        "completed": WebSocketEventType.RESURRECTION_COMPLETED,
+        "failed": WebSocketEventType.RESURRECTION_FAILED,
+        "rolled_back": WebSocketEventType.RESURRECTION_ROLLED_BACK,
+    }
+
+    event_type = status_map.get(status, WebSocketEventType.RESURRECTION_STARTED)
+
+    return await ws_manager.broadcast(
+        event_type,
+        {"request_id": request_id, "status": status, **data},
+        topic="resurrections",
+    )
+
+
+async def broadcast_monitor_event(
+    monitor_id: str,
+    event: str,
+    data: Dict[str, Any],
+) -> int:
+    """
+    Broadcast a monitor event to WebSocket clients.
+
+    Args:
+        monitor_id: Monitor session ID
+        event: Monitor event type (started, anomaly, completed)
+        data: Additional event data
+
+    Returns:
+        Number of clients that received the message
+    """
+    ws_manager = get_ws_manager()
+
+    event_map = {
+        "started": WebSocketEventType.MONITOR_STARTED,
+        "anomaly": WebSocketEventType.MONITOR_ANOMALY,
+        "completed": WebSocketEventType.MONITOR_COMPLETED,
+    }
+
+    event_type = event_map.get(event, WebSocketEventType.MONITOR_STARTED)
+
+    return await ws_manager.broadcast(
+        event_type,
+        {"monitor_id": monitor_id, "event": event, **data},
+        topic="monitors",
+    )
+
+
+async def broadcast_threshold_update(
+    key: str,
+    old_value: float,
+    new_value: float,
+    reason: str,
+) -> int:
+    """
+    Broadcast a threshold update event to WebSocket clients.
+
+    Args:
+        key: Threshold key that was updated
+        old_value: Previous threshold value
+        new_value: New threshold value
+        reason: Reason for the update
+
+    Returns:
+        Number of clients that received the message
+    """
+    ws_manager = get_ws_manager()
+
+    return await ws_manager.broadcast(
+        WebSocketEventType.THRESHOLD_UPDATED,
+        {
+            "key": key,
+            "old_value": old_value,
+            "new_value": new_value,
+            "reason": reason,
+        },
+        topic="thresholds",
+    )
+
+
+async def broadcast_system_status(data: Dict[str, Any]) -> int:
+    """
+    Broadcast a system status event to WebSocket clients.
+
+    Args:
+        data: System status data
+
+    Returns:
+        Number of clients that received the message
+    """
+    ws_manager = get_ws_manager()
+
+    return await ws_manager.broadcast(
+        WebSocketEventType.SYSTEM_STATUS,
+        data,
+        topic="system",
+    )

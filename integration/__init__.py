@@ -43,6 +43,22 @@ from integration.self_monitor import (
     SelfMonitorConfig,
     create_self_monitor,
 )
+from integration.cluster_manager import (
+    ClusterManager,
+    ClusterInfo,
+    ClusterRole,
+    ClusterState,
+    ClusterStore,
+    EtcdClusterStore,
+    InMemoryClusterStore,
+    RedisClusterStore,
+    SyncEvent,
+    SyncScope,
+    create_cluster_store,
+    get_cluster_manager,
+    init_cluster_manager,
+    publish_cluster_event,
+)
 
 __all__ = [
     # Edge Case Manager
@@ -79,4 +95,19 @@ __all__ = [
     "MetricType",
     "SelfMonitorConfig",
     "create_self_monitor",
+    # Cluster Manager
+    "ClusterManager",
+    "ClusterInfo",
+    "ClusterRole",
+    "ClusterState",
+    "ClusterStore",
+    "EtcdClusterStore",
+    "InMemoryClusterStore",
+    "RedisClusterStore",
+    "SyncEvent",
+    "SyncScope",
+    "create_cluster_store",
+    "get_cluster_manager",
+    "init_cluster_manager",
+    "publish_cluster_event",
 ]
