@@ -54,12 +54,40 @@ jobs:
         run: mypy --ignore-missing-imports core/ execution/ learning/ integration/
 
   # ===========================================================================
+  # Dependency Security Scan
+  # ===========================================================================
+  dependency-scan:
+    name: Dependency Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Run pip-audit
+        run: pip-audit -r requirements.txt --strict
+
+      - name: Install Safety
+        run: pip install safety
+
+      - name: Run Safety check
+        run: safety check -r requirements.txt --full-report
+        continue-on-error: true  # Don't fail build but report issues
+
+  # ===========================================================================
   # Unit Tests
   # ===========================================================================
   test:
     name: Unit Tests
     runs-on: ubuntu-latest
-    needs: lint
+    needs: [lint, dependency-scan]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

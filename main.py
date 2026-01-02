@@ -257,9 +257,9 @@ class MedicAgent:
         if metrics_config.get("enabled", True):
             self.metrics = create_metrics(metrics_config)
             self.metrics.set_agent_info(
-                version="6.0.0",
+                version="7.0.0",
                 mode=self.mode,
-                phase="6",
+                phase="7",
             )
 
             # Start metrics server if configured

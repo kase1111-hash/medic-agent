@@ -1,0 +1,78 @@
+# Medic Agent - Network Policy
+# Phase 7: Deployment & Operations
+#
+# Restricts network traffic for defense in depth
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: medic-agent-network
+  namespace: medic-agent
+  labels:
+    app.kubernetes.io/name: medic-agent
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: medic-agent
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow traffic from Prometheus for metrics scraping
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+    # Allow traffic to API endpoint from allowed namespaces
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              medic-access: allowed
+      ports:
+        - protocol: TCP
+          port: 8000
+    # Allow traffic from ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    # Allow DNS resolution
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow traffic to Redis (Smith event bus)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: redis
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Allow traffic to SIEM service
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: security
+      ports:
+        - protocol: TCP
+          port: 8080

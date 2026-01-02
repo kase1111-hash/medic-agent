@@ -16,6 +16,8 @@ resources:
   - secret.yaml
   - deployment.yaml
   - service.yaml
+  - pdb.yaml
+  - networkpolicy.yaml
 
 commonLabels:
   app.kubernetes.io/managed-by: kustomize

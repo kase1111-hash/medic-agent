@@ -99,6 +99,12 @@ interfaces:
     enabled: false
     port: 8000
     host: "0.0.0.0"
+    # CORS origins - configure for production
+    # cors_origins:
+    #   - "https://medic-dashboard.example.com"
+    #   - "https://admin.example.com"
+    cors_origins: []  # Empty = no cross-origin requests allowed (secure default)
+    rate_limit_per_minute: 120
   approval_queue:
     max_pending: 100
     timeout_hours: 24
