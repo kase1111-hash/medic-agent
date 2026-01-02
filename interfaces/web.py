@@ -205,6 +205,12 @@ class WebAPI:
         # Add security headers middleware
         self._add_security_headers_middleware()
 
+        # Add error sanitization middleware (production safety)
+        self._add_error_sanitization_middleware()
+
+        # Add request size limiting middleware
+        self._add_request_size_middleware()
+
         self._setup_routes()
 
     def _add_rate_limiting_middleware(self) -> None:
@@ -262,6 +268,84 @@ class WebAPI:
             return response
 
         logger.info("Security headers middleware enabled")
+
+    def _add_error_sanitization_middleware(self) -> None:
+        """Add error message sanitization for production safety."""
+        if not FASTAPI_AVAILABLE:
+            return
+
+        @self.app.exception_handler(Exception)
+        async def sanitize_errors(request: Request, exc: Exception):
+            """Sanitize error messages in production to prevent information leakage."""
+            environment = self.config.get("environment", os.environ.get("MEDIC_ENV", "development"))
+
+            # Log the full error for debugging
+            logger.error(f"Request error: {type(exc).__name__}: {str(exc)}", exc_info=True)
+
+            # In production, return generic error messages
+            if environment == "production":
+                # Map exception types to safe messages
+                if isinstance(exc, HTTPException):
+                    # HTTPException is safe to return as-is (controlled by our code)
+                    return JSONResponse(
+                        status_code=exc.status_code,
+                        content={"detail": exc.detail},
+                        headers=getattr(exc, "headers", None),
+                    )
+                elif isinstance(exc, ValueError):
+                    # ValueError could leak validation details
+                    return JSONResponse(
+                        status_code=400,
+                        content={"detail": "Invalid request data"},
+                    )
+                else:
+                    # Generic error for anything else
+                    return JSONResponse(
+                        status_code=500,
+                        content={"detail": "Internal server error"},
+                    )
+            else:
+                # In development, return detailed errors for debugging
+                return JSONResponse(
+                    status_code=getattr(exc, "status_code", 500),
+                    content={
+                        "detail": str(exc),
+                        "type": type(exc).__name__,
+                        "debug": True,
+                    },
+                )
+
+        logger.info("Error sanitization middleware enabled")
+
+    def _add_request_size_middleware(self) -> None:
+        """Add request size limiting to prevent resource exhaustion."""
+        if not FASTAPI_AVAILABLE:
+            return
+
+        # Maximum request body size (10MB default)
+        max_request_size = self.config.get("max_request_size_bytes", 10_485_760)  # 10MB
+
+        class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request: Request, call_next):
+                # Check Content-Length header
+                content_length = request.headers.get("content-length")
+                if content_length:
+                    content_length = int(content_length)
+                    if content_length > max_request_size:
+                        logger.warning(
+                            f"Request size {content_length} bytes exceeds limit {max_request_size} bytes "
+                            f"from {request.client.host if request.client else 'unknown'}"
+                        )
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"Request body too large. Maximum size: {max_request_size} bytes",
+                        )
+
+                response = await call_next(request)
+                return response
+
+        self.app.add_middleware(RequestSizeLimitMiddleware)
+        logger.info(f"Request size limiting middleware enabled (max: {max_request_size} bytes)")
 
     def _wrap_response(self, data: Any, errors: Optional[List[str]] = None) -> Dict[str, Any]:
         """Wrap response in standard format."""
