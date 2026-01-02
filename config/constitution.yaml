@@ -24,7 +24,7 @@ phases:
       daily_reports: true
 
   phase_2_manual:
-    enabled: false
+    enabled: true
     description: "Manual Mode - human-approved resurrections"
     features:
       recommendation_engine: true
@@ -33,20 +33,23 @@ phases:
       post_resurrection_monitor: true
 
   phase_3_semi_auto:
-    enabled: false
+    enabled: true
     description: "Semi-Autonomous - auto-approve low-risk cases"
     features:
       risk_assessment: true
       auto_resurrection: true
       approval_queue: true
+      event_bus: true
 
   phase_4_learning:
-    enabled: false
+    enabled: true
     description: "Learning System - outcome tracking and adaptation"
     features:
       outcome_database: true
       pattern_analysis: true
       adaptive_thresholds: true
+      feedback_collection: true
+      module_profiling: true
 
   phase_5_full_auto:
     enabled: false

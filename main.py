@@ -32,7 +32,29 @@ from core.siem_interface import create_siem_adapter, SIEMAdapter
 from core.decision import create_decision_engine, DecisionEngine
 from core.log_decisions import create_decision_logger, DecisionLogger
 from core.reporting import create_report_generator, ReportGenerator
-from core.models import KillReport
+from core.models import KillReport, DecisionOutcome
+
+# Phase 2+ imports
+from execution.recommendation import create_recommendation_engine, RecommendationEngine
+from execution.resurrector import create_resurrector, Resurrector
+from execution.monitor import create_monitor, ResurrectionMonitor
+from interfaces.approval_queue import create_approval_queue, ApprovalQueue
+
+# Phase 3 imports
+from core.risk import create_risk_assessor, RiskAssessor, AdvancedRiskAssessor
+from core.event_bus import create_event_bus, EventBus, EventType, Event
+from execution.auto_resurrect import create_auto_resurrector, AutoResurrectionManager
+
+# Phase 4 imports
+from learning.outcome_store import (
+    create_outcome_store, OutcomeStore, ResurrectionOutcome, OutcomeType
+)
+from learning.pattern_analyzer import create_pattern_analyzer, PatternAnalyzer
+from learning.threshold_adapter import create_threshold_adapter, ThresholdAdapter
+from learning.feedback import (
+    create_feedback_processor, create_automated_collector,
+    FeedbackProcessor, AutomatedFeedbackCollector
+)
 
 logger = get_logger("main")
 
@@ -49,12 +71,30 @@ class MedicAgent:
         self.config = config
         self.mode = config.get("mode", {}).get("current", "observer")
 
-        # Initialize components
+        # Core components (Phase 0-1)
         self.listener: Optional[KillReportListener] = None
         self.siem_adapter: Optional[SIEMAdapter] = None
         self.decision_engine: Optional[DecisionEngine] = None
         self.decision_logger: Optional[DecisionLogger] = None
         self.report_generator: Optional[ReportGenerator] = None
+
+        # Execution components (Phase 2+)
+        self.recommendation_engine: Optional[RecommendationEngine] = None
+        self.resurrector: Optional[Resurrector] = None
+        self.monitor: Optional[ResurrectionMonitor] = None
+        self.approval_queue: Optional[ApprovalQueue] = None
+
+        # Phase 3 components
+        self.risk_assessor: Optional[AdvancedRiskAssessor] = None
+        self.event_bus: Optional[EventBus] = None
+        self.auto_resurrector: Optional[AutoResurrectionManager] = None
+
+        # Phase 4 components (Learning)
+        self.outcome_store: Optional[OutcomeStore] = None
+        self.pattern_analyzer: Optional[PatternAnalyzer] = None
+        self.threshold_adapter: Optional[ThresholdAdapter] = None
+        self.feedback_processor: Optional[FeedbackProcessor] = None
+        self.automated_collector: Optional[AutomatedFeedbackCollector] = None
 
         # Runtime state
         self._running = False
@@ -74,7 +114,7 @@ class MedicAgent:
             log_file=self._get_log_file_path(),
         )
 
-        # Create components
+        # Create core components (Phase 0-1)
         self.listener = create_listener(self.config)
         self.siem_adapter = create_siem_adapter(self.config)
         self.decision_engine = create_decision_engine(self.config)
@@ -82,6 +122,62 @@ class MedicAgent:
         self.report_generator = create_report_generator(
             self.decision_logger, self.config
         )
+
+        # Create execution components (Phase 2+)
+        if self.mode in ("manual", "semi_auto", "full_auto"):
+            self.recommendation_engine = create_recommendation_engine(
+                self.config, self.decision_logger
+            )
+            self.resurrector = create_resurrector(self.config)
+            self.monitor = create_monitor(self.config)
+            self.approval_queue = create_approval_queue(self.config)
+
+            # Set up rollback callback
+            self.monitor.set_rollback_callback(self._handle_rollback)
+
+            logger.info("Phase 2 components initialized")
+
+        # Create Phase 3 components (semi-auto mode)
+        if self.mode in ("semi_auto", "full_auto"):
+            self.event_bus = create_event_bus()
+            self.risk_assessor = create_risk_assessor(self.config)
+            self.auto_resurrector = create_auto_resurrector(
+                self.config,
+                resurrector=self.resurrector,
+                monitor=self.monitor,
+                risk_assessor=self.risk_assessor,
+            )
+
+            # Set up event handlers for auto-resurrection
+            self._setup_event_handlers()
+
+            logger.info("Phase 3 components initialized")
+
+        # Create Phase 4 components (Learning)
+        learning_config = self.config.get("learning", {})
+        if learning_config.get("enabled", False):
+            self.outcome_store = create_outcome_store(self.config)
+            self.pattern_analyzer = create_pattern_analyzer(
+                self.outcome_store,
+                learning_config.get("analysis", {}),
+            )
+            self.threshold_adapter = create_threshold_adapter(
+                self.outcome_store,
+                self.config,
+            )
+            self.feedback_processor = create_feedback_processor(
+                self.outcome_store,
+                on_feedback_processed=self._on_feedback_processed,
+            )
+
+            # Set up automated feedback collection if monitoring is available
+            if self.monitor and learning_config.get("feedback", {}).get("auto_collect", True):
+                self.automated_collector = create_automated_collector(
+                    self.feedback_processor,
+                    self.outcome_store,
+                )
+
+            logger.info("Phase 4 learning components initialized")
 
         logger.info("All components initialized")
 
@@ -174,9 +270,223 @@ class MedicAgent:
             risk_level=decision.risk_level.value,
         )
 
-        # In observer mode, log what would have happened
+        # Mode-specific handling
         if self.mode == "observer":
             self._log_observer_summary(decision)
+        elif self.mode == "manual":
+            await self._handle_manual_mode(kill_report, siem_context, decision)
+        elif self.mode == "semi_auto":
+            await self._handle_semi_auto_mode(kill_report, siem_context, decision)
+
+    async def _handle_manual_mode(
+        self,
+        kill_report: KillReport,
+        siem_context,
+        decision,
+    ) -> None:
+        """Handle kill report in manual mode - queue for human approval."""
+        # Skip if decision is to deny
+        if decision.outcome == DecisionOutcome.DENY:
+            logger.info(
+                "Decision is DENY, not queuing for approval",
+                kill_id=kill_report.kill_id,
+            )
+            return
+
+        # Generate proposal
+        proposal = self.recommendation_engine.generate_proposal(
+            kill_report, siem_context, decision
+        )
+
+        # Queue for approval
+        item_id = await self.approval_queue.enqueue(proposal)
+
+        logger.info(
+            "Proposal queued for manual approval",
+            item_id=item_id,
+            target_module=kill_report.target_module,
+            recommendation=proposal.recommendation.value,
+        )
+
+    async def _handle_semi_auto_mode(
+        self,
+        kill_report: KillReport,
+        siem_context,
+        decision,
+    ) -> None:
+        """Handle kill report in semi-auto mode using Phase 3 components."""
+        # Perform advanced risk assessment
+        risk_assessment = None
+        if self.risk_assessor:
+            risk_assessment = self.risk_assessor.assess(kill_report, siem_context)
+
+            # Emit risk assessment event
+            if self.event_bus:
+                await self.event_bus.emit_event(
+                    EventType.DECISION_MADE,
+                    source="medic.semi_auto",
+                    payload={
+                        "kill_id": kill_report.kill_id,
+                        "risk_level": risk_assessment.risk_level.value,
+                        "risk_score": risk_assessment.risk_score,
+                        "auto_approve_eligible": risk_assessment.auto_approve_eligible,
+                    },
+                    correlation_id=kill_report.kill_id,
+                )
+
+        # Try auto-resurrection if eligible
+        if (decision.outcome == DecisionOutcome.APPROVE_AUTO
+            and decision.auto_approve_eligible
+            and self.auto_resurrector):
+
+            logger.info(
+                "Attempting auto-resurrection",
+                kill_id=kill_report.kill_id,
+                risk_score=decision.risk_score,
+            )
+
+            attempt = await self.auto_resurrector.attempt_resurrection(
+                kill_report, decision, risk_assessment
+            )
+
+            # Emit resurrection event
+            if self.event_bus:
+                await self.event_bus.emit_event(
+                    EventType.RESURRECTION_COMPLETED if attempt.result.value == "success"
+                    else EventType.RESURRECTION_FAILED,
+                    source="medic.auto_resurrector",
+                    payload=attempt.to_dict(),
+                    correlation_id=kill_report.kill_id,
+                )
+
+            if attempt.result.value != "success":
+                # Auto-resurrection not possible, queue for manual review
+                logger.info(
+                    "Auto-resurrection not possible, queuing for manual review",
+                    kill_id=kill_report.kill_id,
+                    reason=attempt.error_message,
+                )
+                await self._handle_manual_mode(kill_report, siem_context, decision)
+
+        elif decision.outcome != DecisionOutcome.DENY:
+            # Queue for manual review
+            await self._handle_manual_mode(kill_report, siem_context, decision)
+
+    async def _handle_rollback(self, request_id: str, reason: str) -> None:
+        """Handle rollback triggered by monitor."""
+        logger.warning(
+            "Rollback triggered by monitor",
+            request_id=request_id,
+            reason=reason,
+        )
+        if self.resurrector:
+            await self.resurrector.rollback(request_id, reason)
+
+        # Emit rollback event
+        if self.event_bus:
+            await self.event_bus.emit_event(
+                EventType.RESURRECTION_ROLLBACK,
+                source="medic.monitor",
+                payload={"request_id": request_id, "reason": reason},
+            )
+
+    def _setup_event_handlers(self) -> None:
+        """Set up event handlers for Phase 3 event-driven architecture."""
+        if not self.event_bus:
+            return
+
+        # Handler for anomaly detection
+        async def on_anomaly(event: Event) -> None:
+            logger.warning(
+                "Anomaly detected via event bus",
+                event_id=event.event_id,
+                payload=event.payload,
+            )
+            # Could trigger additional analysis or alerting here
+
+        self.event_bus.subscribe(EventType.ANOMALY_DETECTED, on_anomaly)
+
+        # Handler for resurrection failures
+        async def on_resurrection_failed(event: Event) -> None:
+            module = event.payload.get("target_module")
+            if module and self.auto_resurrector:
+                # Consider blacklisting after repeated failures
+                history = self.auto_resurrector.get_history(limit=10, module=module)
+                failures = sum(1 for a in history if a.result.value == "failed")
+                if failures >= 3:
+                    self.auto_resurrector.blacklist_module(
+                        module,
+                        reason=f"Too many failures ({failures} in recent history)"
+                    )
+                    logger.warning(
+                        "Module blacklisted due to repeated failures",
+                        module=module,
+                        failure_count=failures,
+                    )
+
+        self.event_bus.subscribe(EventType.RESURRECTION_FAILED, on_resurrection_failed)
+
+        logger.info("Event handlers configured")
+
+    def _on_feedback_processed(self, feedback, updates: dict) -> None:
+        """Handle processed feedback from the learning system."""
+        logger.info(
+            "Feedback processed",
+            feedback_id=feedback.feedback_id,
+            outcome_id=feedback.outcome_id,
+            feedback_type=feedback.feedback_type.value,
+            updates=list(updates.keys()),
+        )
+
+        # If thresholds need adjustment, trigger analysis
+        if self.threshold_adapter and feedback.feedback_type.value in (
+            "outcome_correction", "decision_correction"
+        ):
+            # Schedule threshold analysis (don't block)
+            proposal = self.threshold_adapter.analyze_and_propose()
+            if proposal:
+                logger.info(
+                    "Threshold adjustment proposal created",
+                    proposal_id=proposal.proposal_id,
+                    adjustments=len(proposal.adjustments),
+                )
+
+    def _record_outcome(
+        self,
+        decision,
+        kill_report: KillReport,
+        was_auto_approved: bool = False,
+        request_id: Optional[str] = None,
+    ) -> Optional[str]:
+        """Record a resurrection outcome for learning."""
+        if not self.outcome_store:
+            return None
+
+        import uuid
+
+        outcome = ResurrectionOutcome(
+            outcome_id=str(uuid.uuid4()),
+            decision_id=decision.decision_id,
+            kill_id=kill_report.kill_id,
+            target_module=kill_report.target_module,
+            timestamp=datetime.utcnow(),
+            outcome_type=OutcomeType.UNDETERMINED,  # Will be updated by monitoring
+            original_risk_score=decision.risk_score,
+            original_confidence=decision.confidence,
+            original_decision=decision.outcome.value,
+            was_auto_approved=was_auto_approved,
+            metadata={"request_id": request_id} if request_id else {},
+        )
+
+        self.outcome_store.store_outcome(outcome)
+
+        logger.debug(
+            "Outcome recorded",
+            outcome_id=outcome.outcome_id,
+            kill_id=kill_report.kill_id,
+        )
+
+        return outcome.outcome_id
 
     def _log_observer_summary(self, decision) -> None:
         """Log observer mode summary of what would have happened."""
@@ -235,6 +545,10 @@ class MedicAgent:
         # Close SIEM adapter
         if hasattr(self.siem_adapter, "close"):
             await self.siem_adapter.close()
+
+        # Close outcome store (Phase 4)
+        if self.outcome_store and hasattr(self.outcome_store, "close"):
+            self.outcome_store.close()
 
         # Log final stats
         uptime = (datetime.utcnow() - self._start_time).total_seconds() if self._start_time else 0
@@ -322,6 +636,18 @@ async def main_async(args: argparse.Namespace) -> int:
         await agent.generate_report()
         return 0
 
+    if args.cli:
+        # Run CLI interface for manual approval
+        await agent.initialize()
+        from interfaces.cli import run_cli_async
+        await run_cli_async(
+            agent.approval_queue,
+            config,
+            resurrector=agent.resurrector,
+            monitor=agent.monitor,
+        )
+        return 0
+
     # Set up signal handlers
     setup_signal_handlers(agent)
 
@@ -367,10 +693,16 @@ def main() -> int:
     )
 
     parser.add_argument(
+        "--cli",
+        action="store_true",
+        help="Run the CLI interface for manual approval",
+    )
+
+    parser.add_argument(
         "--version",
         "-v",
         action="version",
-        version="Medic Agent v1.0.0 (Phase 1)",
+        version="Medic Agent v4.0.0 (Phase 4 - Learning System)",
     )
 
     args = parser.parse_args()
