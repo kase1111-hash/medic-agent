@@ -997,7 +997,7 @@ def main() -> int:
         "--version",
         "-v",
         action="version",
-        version="Medic Agent v6.0.0 (Phase 6 - Production Ready)",
+        version="Medic Agent v7.0.0 (Phase 7 - Deployment & Operations)",
     )
 
     args = parser.parse_args()

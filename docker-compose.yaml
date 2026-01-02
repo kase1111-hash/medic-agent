@@ -1,0 +1,142 @@
+# Medic Agent - Docker Compose Configuration
+# Phase 7: Deployment & Operations
+#
+# Local development and testing environment
+
+version: '3.8'
+
+services:
+  # =========================================================================
+  # Medic Agent - Main Application
+  # =========================================================================
+  medic-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: medic-agent
+    restart: unless-stopped
+    ports:
+      - "8000:8000"   # Web API
+      - "9090:9090"   # Prometheus metrics
+    environment:
+      - MEDIC_CONFIG_PATH=/app/config/medic.yaml
+      - MEDIC_MODE=observer
+      - MEDIC_LOG_LEVEL=INFO
+      - SMITH_EVENT_BUS_URL=redis://redis:6379
+      - SIEM_ENDPOINT=http://siem-mock:8080/siem
+      - SIEM_API_KEY=${SIEM_API_KEY:-dev-api-key}
+    volumes:
+      - ./config:/app/config:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - medic-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # =========================================================================
+  # Redis - Smith Event Bus
+  # =========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: medic-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - medic-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: redis-server --appendonly yes
+
+  # =========================================================================
+  # SIEM Mock - For Development/Testing
+  # =========================================================================
+  siem-mock:
+    build:
+      context: .
+      dockerfile: Dockerfile.siem-mock
+    container_name: medic-siem-mock
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    networks:
+      - medic-network
+    profiles:
+      - dev
+
+  # =========================================================================
+  # Prometheus - Metrics Collection
+  # =========================================================================
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: medic-prometheus
+    restart: unless-stopped
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - medic-network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    profiles:
+      - monitoring
+
+  # =========================================================================
+  # Grafana - Metrics Visualization
+  # =========================================================================
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: medic-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    networks:
+      - medic-network
+    depends_on:
+      - prometheus
+    profiles:
+      - monitoring
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  medic-network:
+    driver: bridge
+    name: medic-network
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  redis-data:
+    name: medic-redis-data
+  prometheus-data:
+    name: medic-prometheus-data
+  grafana-data:
+    name: medic-grafana-data
