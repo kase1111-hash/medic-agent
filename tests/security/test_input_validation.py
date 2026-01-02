@@ -10,6 +10,7 @@ from datetime import datetime
 import uuid
 
 from core.models import KillReport, KillReason, Severity, SIEMContextResponse
+from core.validation import ValidationError
 
 
 class TestKillReportValidation:
@@ -90,8 +91,8 @@ class TestKillReportValidation:
             )
 
     def test_sanitize_module_name_special_chars(self):
-        """Module names with special characters should be handled safely."""
-        # Should not raise, but should sanitize or accept safely
+        """Module names with allowed special characters should be accepted."""
+        # Should accept alphanumeric, underscore, hyphen, dot
         report = KillReport(
             kill_id=str(uuid.uuid4()),
             timestamp=datetime.utcnow(),
@@ -107,11 +108,11 @@ class TestKillReportValidation:
         assert report.target_module == "test-service_v2.0"
 
     def test_handle_very_long_module_name(self):
-        """Very long module names should be handled."""
+        """Very long module names should be rejected."""
         long_name = "a" * 10000
-        # Should either truncate or reject, not crash
-        try:
-            report = KillReport(
+        # Should reject with ValidationError
+        with pytest.raises(ValidationError) as exc_info:
+            KillReport(
                 kill_id=str(uuid.uuid4()),
                 timestamp=datetime.utcnow(),
                 target_module=long_name,
@@ -123,11 +124,7 @@ class TestKillReportValidation:
                 dependencies=[],
                 source_agent="smith",
             )
-            # If it accepts, ensure it's usable
-            assert len(report.target_module) <= 10000
-        except ValueError:
-            # Rejection is also acceptable
-            pass
+        assert "too long" in str(exc_info.value).lower()
 
     def test_handle_unicode_in_evidence(self):
         """Unicode characters in evidence should be handled safely."""
@@ -196,22 +193,23 @@ class TestInjectionPrevention:
     """Test that injection attacks are prevented."""
 
     def test_sql_injection_in_module_name(self):
-        """SQL injection in module name should not cause issues."""
+        """SQL injection patterns in module name should be rejected."""
         malicious_name = "'; DROP TABLE modules; --"
-        report = KillReport(
-            kill_id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow(),
-            target_module=malicious_name,
-            target_instance_id="instance",
-            kill_reason=KillReason.ANOMALY_BEHAVIOR,
-            severity=Severity.LOW,
-            confidence_score=0.5,
-            evidence=[],
-            dependencies=[],
-            source_agent="smith",
-        )
-        # Should store as-is (no execution context)
-        assert report.target_module == malicious_name
+        with pytest.raises(ValidationError) as exc_info:
+            KillReport(
+                kill_id=str(uuid.uuid4()),
+                timestamp=datetime.utcnow(),
+                target_module=malicious_name,
+                target_instance_id="instance",
+                kill_reason=KillReason.ANOMALY_BEHAVIOR,
+                severity=Severity.LOW,
+                confidence_score=0.5,
+                evidence=[],
+                dependencies=[],
+                source_agent="smith",
+            )
+        # Should be rejected due to invalid characters
+        assert "invalid characters" in str(exc_info.value).lower() or "pattern" in str(exc_info.value).lower()
 
     def test_command_injection_in_evidence(self):
         """Command injection in evidence should not cause issues."""
@@ -237,22 +235,22 @@ class TestInjectionPrevention:
         assert report.evidence == malicious_evidence
 
     def test_path_traversal_in_module_name(self):
-        """Path traversal attempts should be handled safely."""
+        """Path traversal attempts should be rejected."""
         traversal_name = "../../../etc/passwd"
-        report = KillReport(
-            kill_id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow(),
-            target_module=traversal_name,
-            target_instance_id="instance",
-            kill_reason=KillReason.ANOMALY_BEHAVIOR,
-            severity=Severity.LOW,
-            confidence_score=0.5,
-            evidence=[],
-            dependencies=[],
-            source_agent="smith",
-        )
-        # Should store as-is (used only as identifier)
-        assert report.target_module == traversal_name
+        with pytest.raises(ValidationError) as exc_info:
+            KillReport(
+                kill_id=str(uuid.uuid4()),
+                timestamp=datetime.utcnow(),
+                target_module=traversal_name,
+                target_instance_id="instance",
+                kill_reason=KillReason.ANOMALY_BEHAVIOR,
+                severity=Severity.LOW,
+                confidence_score=0.5,
+                evidence=[],
+                dependencies=[],
+                source_agent="smith",
+            )
+        assert "path traversal" in str(exc_info.value).lower()
 
 
 class TestJSONParsingSecurity:
@@ -283,21 +281,22 @@ class TestJSONParsingSecurity:
         assert report.metadata is not None
 
     def test_large_metadata_object(self):
-        """Large metadata should be handled without memory issues."""
-        # 1MB of data
+        """Large metadata should be rejected to prevent resource exhaustion."""
+        # 1MB of data - should be rejected (max is 100KB)
         large_data = {"key_" + str(i): "x" * 100 for i in range(10000)}
 
-        report = KillReport(
-            kill_id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow(),
-            target_module="test",
-            target_instance_id="instance",
-            kill_reason=KillReason.ANOMALY_BEHAVIOR,
-            severity=Severity.LOW,
-            confidence_score=0.5,
-            evidence=[],
-            dependencies=[],
-            source_agent="smith",
-            metadata=large_data,
-        )
-        assert len(report.metadata) == 10000
+        with pytest.raises(ValidationError) as exc_info:
+            KillReport(
+                kill_id=str(uuid.uuid4()),
+                timestamp=datetime.utcnow(),
+                target_module="test",
+                target_instance_id="instance",
+                kill_reason=KillReason.ANOMALY_BEHAVIOR,
+                severity=Severity.LOW,
+                confidence_score=0.5,
+                evidence=[],
+                dependencies=[],
+                source_agent="smith",
+                metadata=large_data,
+            )
+        assert "too large" in str(exc_info.value).lower()
