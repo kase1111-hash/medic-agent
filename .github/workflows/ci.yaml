@@ -106,6 +106,14 @@ jobs:
         run: |
           pytest tests/unit/ -v --cov=core --cov=execution --cov=learning --cov=integration --cov-report=xml --cov-report=html
 
+      - name: Run security tests
+        run: |
+          pytest tests/security/ -v
+
+      - name: Run edge case tests
+        run: |
+          pytest tests/unit/core/test_edge_cases.py -v
+
       - name: Upload coverage report
         uses: codecov/codecov-action@v3
         with:
