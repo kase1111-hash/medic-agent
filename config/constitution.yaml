@@ -52,11 +52,12 @@ phases:
       module_profiling: true
 
   phase_5_full_auto:
-    enabled: false
+    enabled: true
     description: "Full Autonomous - self-healing with Smith collaboration"
     features:
       edge_case_manager: true
       smith_negotiation: true
+      veto_protocol: true
       self_monitoring: true
 
 # Safety constraints applied across all phases
