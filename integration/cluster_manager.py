@@ -303,6 +303,283 @@ class InMemoryClusterStore(ClusterStore):
             return True
 
 
+class RedisClusterStore(ClusterStore):
+    """
+    Redis-backed cluster store for production multi-cluster deployments.
+
+    Uses Redis for:
+    - Cluster registration and discovery
+    - Distributed leader election with SETNX
+    - Event synchronization via Redis Streams or Lists
+
+    Requires redis-py (async): pip install redis
+    """
+
+    # Redis key prefixes
+    CLUSTER_PREFIX = "medic:cluster:"
+    LEADER_KEY = "medic:cluster:leader"
+    EVENTS_KEY = "medic:cluster:events"
+    ACKED_PREFIX = "medic:cluster:acked:"
+
+    def __init__(
+        self,
+        host: str = "localhost",
+        port: int = 6379,
+        db: int = 0,
+        password: Optional[str] = None,
+        ssl: bool = False,
+        max_events: int = 1000,
+    ):
+        self.host = host
+        self.port = port
+        self.db = db
+        self.password = password
+        self.ssl = ssl
+        self.max_events = max_events
+        self._redis: Optional[Any] = None
+        self._connected = False
+
+    async def _ensure_connected(self) -> None:
+        """Ensure Redis connection is established."""
+        if self._connected and self._redis:
+            return
+
+        try:
+            import redis.asyncio as redis
+        except ImportError:
+            raise ImportError(
+                "redis package required for RedisClusterStore. "
+                "Install with: pip install redis"
+            )
+
+        self._redis = redis.Redis(
+            host=self.host,
+            port=self.port,
+            db=self.db,
+            password=self.password,
+            ssl=self.ssl,
+            decode_responses=True,
+        )
+        self._connected = True
+        logger.info(f"Connected to Redis at {self.host}:{self.port}")
+
+    async def close(self) -> None:
+        """Close the Redis connection."""
+        if self._redis:
+            await self._redis.close()
+            self._connected = False
+            logger.info("Redis connection closed")
+
+    def _cluster_key(self, cluster_id: str) -> str:
+        """Get Redis key for a cluster."""
+        return f"{self.CLUSTER_PREFIX}{cluster_id}"
+
+    async def register_cluster(self, info: ClusterInfo) -> bool:
+        await self._ensure_connected()
+        try:
+            key = self._cluster_key(info.cluster_id)
+            await self._redis.hset(key, mapping=info.to_dict())
+            # Set expiration for automatic cleanup of stale clusters
+            await self._redis.expire(key, 300)  # 5 minutes
+            logger.info(f"Cluster registered in Redis: {info.cluster_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to register cluster: {e}")
+            return False
+
+    async def deregister_cluster(self, cluster_id: str) -> bool:
+        await self._ensure_connected()
+        try:
+            key = self._cluster_key(cluster_id)
+            await self._redis.delete(key)
+            # Clean up acked events
+            acked_key = f"{self.ACKED_PREFIX}{cluster_id}"
+            await self._redis.delete(acked_key)
+            logger.info(f"Cluster deregistered from Redis: {cluster_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to deregister cluster: {e}")
+            return False
+
+    async def get_cluster(self, cluster_id: str) -> Optional[ClusterInfo]:
+        await self._ensure_connected()
+        try:
+            key = self._cluster_key(cluster_id)
+            data = await self._redis.hgetall(key)
+            if data:
+                return ClusterInfo.from_dict(data)
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get cluster: {e}")
+            return None
+
+    async def list_clusters(self) -> List[ClusterInfo]:
+        await self._ensure_connected()
+        try:
+            pattern = f"{self.CLUSTER_PREFIX}*"
+            keys = []
+            async for key in self._redis.scan_iter(match=pattern):
+                if key != self.LEADER_KEY:
+                    keys.append(key)
+
+            clusters = []
+            for key in keys:
+                data = await self._redis.hgetall(key)
+                if data:
+                    try:
+                        clusters.append(ClusterInfo.from_dict(data))
+                    except Exception:
+                        pass
+            return clusters
+        except Exception as e:
+            logger.error(f"Failed to list clusters: {e}")
+            return []
+
+    async def update_cluster(self, info: ClusterInfo) -> bool:
+        await self._ensure_connected()
+        try:
+            key = self._cluster_key(info.cluster_id)
+            await self._redis.hset(key, mapping=info.to_dict())
+            # Refresh expiration
+            await self._redis.expire(key, 300)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update cluster: {e}")
+            return False
+
+    async def acquire_leader_lock(self, cluster_id: str, ttl_seconds: int = 30) -> bool:
+        await self._ensure_connected()
+        try:
+            # Try to set leader with NX (only if not exists) and EX (with expiration)
+            result = await self._redis.set(
+                self.LEADER_KEY,
+                cluster_id,
+                nx=True,
+                ex=ttl_seconds,
+            )
+
+            if result:
+                logger.info(f"Cluster {cluster_id} acquired leader lock via Redis")
+                return True
+
+            # Check if we already hold the lock
+            current_leader = await self._redis.get(self.LEADER_KEY)
+            if current_leader == cluster_id:
+                # Refresh the TTL
+                await self._redis.expire(self.LEADER_KEY, ttl_seconds)
+                return True
+
+            return False
+        except Exception as e:
+            logger.error(f"Failed to acquire leader lock: {e}")
+            return False
+
+    async def release_leader_lock(self, cluster_id: str) -> bool:
+        await self._ensure_connected()
+        try:
+            # Only release if we hold the lock
+            current_leader = await self._redis.get(self.LEADER_KEY)
+            if current_leader == cluster_id:
+                await self._redis.delete(self.LEADER_KEY)
+                logger.info(f"Cluster {cluster_id} released leader lock")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Failed to release leader lock: {e}")
+            return False
+
+    async def get_leader(self) -> Optional[str]:
+        await self._ensure_connected()
+        try:
+            return await self._redis.get(self.LEADER_KEY)
+        except Exception as e:
+            logger.error(f"Failed to get leader: {e}")
+            return None
+
+    async def push_sync_event(self, event: SyncEvent) -> bool:
+        await self._ensure_connected()
+        try:
+            import json
+            event_data = json.dumps(event.to_dict())
+            await self._redis.lpush(self.EVENTS_KEY, event_data)
+            # Trim to max events
+            await self._redis.ltrim(self.EVENTS_KEY, 0, self.max_events - 1)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to push sync event: {e}")
+            return False
+
+    async def get_pending_events(self, cluster_id: str, limit: int = 100) -> List[SyncEvent]:
+        await self._ensure_connected()
+        try:
+            import json
+
+            # Get acked event IDs for this cluster
+            acked_key = f"{self.ACKED_PREFIX}{cluster_id}"
+            acked = await self._redis.smembers(acked_key)
+
+            # Get events from list
+            events_data = await self._redis.lrange(self.EVENTS_KEY, 0, limit * 2)
+
+            pending = []
+            for data in events_data:
+                try:
+                    event = SyncEvent.from_dict(json.loads(data))
+                    # Skip if already acked or from same cluster
+                    if event.event_id not in acked and event.source_cluster != cluster_id:
+                        pending.append(event)
+                        if len(pending) >= limit:
+                            break
+                except Exception:
+                    pass
+
+            return pending
+        except Exception as e:
+            logger.error(f"Failed to get pending events: {e}")
+            return []
+
+    async def ack_event(self, cluster_id: str, event_id: str) -> bool:
+        await self._ensure_connected()
+        try:
+            acked_key = f"{self.ACKED_PREFIX}{cluster_id}"
+            await self._redis.sadd(acked_key, event_id)
+            # Keep acked set manageable
+            await self._redis.expire(acked_key, 86400)  # 24 hours
+            return True
+        except Exception as e:
+            logger.error(f"Failed to ack event: {e}")
+            return False
+
+
+def create_cluster_store(config: Dict[str, Any]) -> ClusterStore:
+    """
+    Factory function to create a cluster store based on configuration.
+
+    Args:
+        config: Cluster configuration dict with 'store' section
+
+    Returns:
+        Appropriate ClusterStore implementation
+    """
+    store_config = config.get("store", {})
+    store_type = store_config.get("type", "memory")
+
+    if store_type == "redis":
+        redis_config = store_config.get("redis", {})
+        return RedisClusterStore(
+            host=redis_config.get("host", "localhost"),
+            port=redis_config.get("port", 6379),
+            db=redis_config.get("db", 0),
+            password=redis_config.get("password"),
+            ssl=redis_config.get("ssl", False),
+        )
+    elif store_type == "memory":
+        return InMemoryClusterStore()
+    else:
+        logger.warning(f"Unknown store type '{store_type}', using in-memory")
+        return InMemoryClusterStore()
+
+
 class ClusterManager:
     """
     Manages cluster federation for multi-cluster Medic deployments.
