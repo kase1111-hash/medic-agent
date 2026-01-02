@@ -417,6 +417,8 @@ def create_siem_adapter(config: Dict[str, Any]) -> SIEMAdapter:
     Returns:
         Configured SIEMAdapter instance
     """
+    import os
+
     siem_config = config.get("siem", {})
     adapter_type = siem_config.get("adapter", "rest")
 
@@ -425,10 +427,35 @@ def create_siem_adapter(config: Dict[str, Any]) -> SIEMAdapter:
             default_risk_score=siem_config.get("default_risk_score", 0.5),
         )
 
+    # Get API key from environment variable or config
+    auth_config = siem_config.get("auth", {})
+    api_key = None
+
+    # Priority: environment variable > config file
+    key_env_name = auth_config.get("key_env", "SIEM_API_KEY")
+    api_key = os.environ.get(key_env_name)
+
+    if not api_key:
+        # Fall back to config file (not recommended for production)
+        api_key = auth_config.get("api_key")
+
+    if not api_key:
+        logger.warning(
+            f"SIEM API key not configured. Set {key_env_name} environment variable "
+            "or configure siem.auth.api_key in config file."
+        )
+
+    # Validate API key format (basic check)
+    if api_key and api_key.startswith("dev-") or api_key == "replace-with-actual-api-key":
+        logger.warning(
+            "SIEM API key appears to be a placeholder. "
+            "Set a real API key for production use."
+        )
+
     # Default to REST adapter
     return RESTSIEMAdapter(
         endpoint=siem_config.get("endpoint", "http://localhost:8080/siem"),
-        api_key=siem_config.get("auth", {}).get("api_key"),
+        api_key=api_key,
         timeout_seconds=siem_config.get("timeout_seconds", 30),
         max_retries=siem_config.get("retry", {}).get("max_attempts", 3),
     )
