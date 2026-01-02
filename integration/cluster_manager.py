@@ -551,6 +551,361 @@ class RedisClusterStore(ClusterStore):
             return False
 
 
+class EtcdClusterStore(ClusterStore):
+    """
+    Etcd-backed cluster store for production multi-cluster deployments.
+
+    Uses etcd for:
+    - Cluster registration and discovery with TTL-based leases
+    - Distributed leader election with etcd's lease mechanism
+    - Event synchronization via key-value storage
+
+    Requires etcd3: pip install etcd3
+    """
+
+    # Etcd key prefixes
+    CLUSTER_PREFIX = "/medic/cluster/nodes/"
+    LEADER_KEY = "/medic/cluster/leader"
+    EVENTS_PREFIX = "/medic/cluster/events/"
+    ACKED_PREFIX = "/medic/cluster/acked/"
+
+    def __init__(
+        self,
+        endpoints: Optional[List[str]] = None,
+        host: str = "localhost",
+        port: int = 2379,
+        cert_file: Optional[str] = None,
+        key_file: Optional[str] = None,
+        ca_file: Optional[str] = None,
+        timeout: int = 10,
+        max_events: int = 1000,
+    ):
+        self.endpoints = endpoints or [f"{host}:{port}"]
+        self.host = host
+        self.port = port
+        self.cert_file = cert_file
+        self.key_file = key_file
+        self.ca_file = ca_file
+        self.timeout = timeout
+        self.max_events = max_events
+        self._client: Optional[Any] = None
+        self._connected = False
+        self._lease: Optional[Any] = None
+        self._lease_id: Optional[int] = None
+
+    async def _ensure_connected(self) -> None:
+        """Ensure etcd connection is established."""
+        if self._connected and self._client:
+            return
+
+        try:
+            import etcd3
+        except ImportError:
+            raise ImportError(
+                "etcd3 package required for EtcdClusterStore. "
+                "Install with: pip install etcd3"
+            )
+
+        # Parse first endpoint for host/port if using endpoints list
+        if self.endpoints:
+            first_endpoint = self.endpoints[0]
+            if ":" in first_endpoint:
+                parts = first_endpoint.rsplit(":", 1)
+                self.host = parts[0].replace("https://", "").replace("http://", "")
+                self.port = int(parts[1])
+
+        # Build SSL/TLS configuration if certificates provided
+        if self.cert_file and self.key_file:
+            self._client = etcd3.client(
+                host=self.host,
+                port=self.port,
+                cert_cert=self.cert_file,
+                cert_key=self.key_file,
+                ca_cert=self.ca_file,
+                timeout=self.timeout,
+            )
+        else:
+            self._client = etcd3.client(
+                host=self.host,
+                port=self.port,
+                timeout=self.timeout,
+            )
+
+        self._connected = True
+        logger.info(f"Connected to etcd at {self.host}:{self.port}")
+
+    async def close(self) -> None:
+        """Close the etcd connection."""
+        if self._lease_id and self._client:
+            try:
+                self._client.revoke_lease(self._lease_id)
+            except Exception:
+                pass
+        if self._client:
+            self._client.close()
+            self._connected = False
+            self._client = None
+            logger.info("Etcd connection closed")
+
+    def _cluster_key(self, cluster_id: str) -> str:
+        """Get etcd key for a cluster."""
+        return f"{self.CLUSTER_PREFIX}{cluster_id}"
+
+    def _run_sync(self, func, *args, **kwargs):
+        """Run a synchronous etcd3 function (etcd3 lib is sync-only)."""
+        import asyncio
+        loop = asyncio.get_event_loop()
+        return loop.run_in_executor(None, lambda: func(*args, **kwargs))
+
+    async def register_cluster(self, info: ClusterInfo) -> bool:
+        await self._ensure_connected()
+        try:
+            import json
+
+            key = self._cluster_key(info.cluster_id)
+            value = json.dumps(info.to_dict())
+
+            # Create a lease for automatic cleanup (5 minutes = 300 seconds)
+            lease = self._client.lease(300)
+            self._client.put(key, value, lease=lease)
+
+            logger.info(f"Cluster registered in etcd: {info.cluster_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to register cluster in etcd: {e}")
+            return False
+
+    async def deregister_cluster(self, cluster_id: str) -> bool:
+        await self._ensure_connected()
+        try:
+            key = self._cluster_key(cluster_id)
+            self._client.delete(key)
+
+            # Clean up acked events
+            acked_prefix = f"{self.ACKED_PREFIX}{cluster_id}/"
+            self._client.delete_prefix(acked_prefix)
+
+            logger.info(f"Cluster deregistered from etcd: {cluster_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to deregister cluster from etcd: {e}")
+            return False
+
+    async def get_cluster(self, cluster_id: str) -> Optional[ClusterInfo]:
+        await self._ensure_connected()
+        try:
+            import json
+
+            key = self._cluster_key(cluster_id)
+            value, _ = self._client.get(key)
+
+            if value:
+                data = json.loads(value.decode("utf-8"))
+                return ClusterInfo.from_dict(data)
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get cluster from etcd: {e}")
+            return None
+
+    async def list_clusters(self) -> List[ClusterInfo]:
+        await self._ensure_connected()
+        try:
+            import json
+
+            clusters = []
+            for value, metadata in self._client.get_prefix(self.CLUSTER_PREFIX):
+                if value:
+                    try:
+                        data = json.loads(value.decode("utf-8"))
+                        clusters.append(ClusterInfo.from_dict(data))
+                    except Exception:
+                        pass
+
+            return clusters
+        except Exception as e:
+            logger.error(f"Failed to list clusters from etcd: {e}")
+            return []
+
+    async def update_cluster(self, info: ClusterInfo) -> bool:
+        await self._ensure_connected()
+        try:
+            import json
+
+            key = self._cluster_key(info.cluster_id)
+            value = json.dumps(info.to_dict())
+
+            # Create new lease and update
+            lease = self._client.lease(300)
+            self._client.put(key, value, lease=lease)
+
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update cluster in etcd: {e}")
+            return False
+
+    async def acquire_leader_lock(self, cluster_id: str, ttl_seconds: int = 30) -> bool:
+        await self._ensure_connected()
+        try:
+            # Create or refresh lease for leader lock
+            if not self._lease_id:
+                lease = self._client.lease(ttl_seconds)
+                self._lease_id = lease.id
+            else:
+                # Refresh existing lease
+                try:
+                    self._client.refresh_lease(self._lease_id)
+                except Exception:
+                    # Lease expired, create new one
+                    lease = self._client.lease(ttl_seconds)
+                    self._lease_id = lease.id
+
+            # Try to acquire leader lock using transaction
+            # put_if_not_exists pattern
+            current_value, _ = self._client.get(self.LEADER_KEY)
+
+            if current_value is None:
+                # No leader, try to become leader
+                lease = self._client.lease(ttl_seconds)
+                self._lease_id = lease.id
+                success, _ = self._client.transaction(
+                    compare=[
+                        self._client.transactions.version(self.LEADER_KEY) == 0
+                    ],
+                    success=[
+                        self._client.transactions.put(
+                            self.LEADER_KEY, cluster_id, lease=lease
+                        )
+                    ],
+                    failure=[],
+                )
+
+                if success:
+                    logger.info(f"Cluster {cluster_id} acquired leader lock via etcd")
+                    return True
+            elif current_value.decode("utf-8") == cluster_id:
+                # We already hold the lock, refresh it
+                lease = self._client.lease(ttl_seconds)
+                self._client.put(self.LEADER_KEY, cluster_id, lease=lease)
+                return True
+
+            return False
+        except Exception as e:
+            logger.error(f"Failed to acquire leader lock in etcd: {e}")
+            return False
+
+    async def release_leader_lock(self, cluster_id: str) -> bool:
+        await self._ensure_connected()
+        try:
+            current_value, _ = self._client.get(self.LEADER_KEY)
+
+            if current_value and current_value.decode("utf-8") == cluster_id:
+                self._client.delete(self.LEADER_KEY)
+                if self._lease_id:
+                    try:
+                        self._client.revoke_lease(self._lease_id)
+                    except Exception:
+                        pass
+                    self._lease_id = None
+                logger.info(f"Cluster {cluster_id} released leader lock")
+                return True
+
+            return False
+        except Exception as e:
+            logger.error(f"Failed to release leader lock in etcd: {e}")
+            return False
+
+    async def get_leader(self) -> Optional[str]:
+        await self._ensure_connected()
+        try:
+            value, _ = self._client.get(self.LEADER_KEY)
+            if value:
+                return value.decode("utf-8")
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get leader from etcd: {e}")
+            return None
+
+    async def push_sync_event(self, event: SyncEvent) -> bool:
+        await self._ensure_connected()
+        try:
+            import json
+            import time
+
+            # Use timestamp-based key for ordering
+            key = f"{self.EVENTS_PREFIX}{int(time.time() * 1000000)}_{event.event_id}"
+            value = json.dumps(event.to_dict())
+
+            # Create lease for automatic cleanup (1 hour)
+            lease = self._client.lease(3600)
+            self._client.put(key, value, lease=lease)
+
+            # Cleanup old events if too many
+            await self._cleanup_old_events()
+
+            return True
+        except Exception as e:
+            logger.error(f"Failed to push sync event to etcd: {e}")
+            return False
+
+    async def _cleanup_old_events(self) -> None:
+        """Remove oldest events if over limit."""
+        try:
+            events = list(self._client.get_prefix(self.EVENTS_PREFIX))
+            if len(events) > self.max_events:
+                # Sort by key (timestamp-based) and delete oldest
+                sorted_events = sorted(events, key=lambda x: x[1].key)
+                to_delete = len(events) - self.max_events
+                for _, metadata in sorted_events[:to_delete]:
+                    self._client.delete(metadata.key)
+        except Exception as e:
+            logger.debug(f"Failed to cleanup old events: {e}")
+
+    async def get_pending_events(self, cluster_id: str, limit: int = 100) -> List[SyncEvent]:
+        await self._ensure_connected()
+        try:
+            import json
+
+            # Get acked event IDs for this cluster
+            acked_prefix = f"{self.ACKED_PREFIX}{cluster_id}/"
+            acked = set()
+            for value, _ in self._client.get_prefix(acked_prefix):
+                if value:
+                    acked.add(value.decode("utf-8"))
+
+            # Get events
+            pending = []
+            for value, metadata in self._client.get_prefix(self.EVENTS_PREFIX):
+                if value:
+                    try:
+                        event = SyncEvent.from_dict(json.loads(value.decode("utf-8")))
+                        # Skip if already acked or from same cluster
+                        if event.event_id not in acked and event.source_cluster != cluster_id:
+                            pending.append(event)
+                            if len(pending) >= limit:
+                                break
+                    except Exception:
+                        pass
+
+            return pending
+        except Exception as e:
+            logger.error(f"Failed to get pending events from etcd: {e}")
+            return []
+
+    async def ack_event(self, cluster_id: str, event_id: str) -> bool:
+        await self._ensure_connected()
+        try:
+            key = f"{self.ACKED_PREFIX}{cluster_id}/{event_id}"
+
+            # Create lease for automatic cleanup (24 hours)
+            lease = self._client.lease(86400)
+            self._client.put(key, event_id, lease=lease)
+
+            return True
+        except Exception as e:
+            logger.error(f"Failed to ack event in etcd: {e}")
+            return False
+
+
 def create_cluster_store(config: Dict[str, Any]) -> ClusterStore:
     """
     Factory function to create a cluster store based on configuration.
@@ -572,6 +927,17 @@ def create_cluster_store(config: Dict[str, Any]) -> ClusterStore:
             db=redis_config.get("db", 0),
             password=redis_config.get("password"),
             ssl=redis_config.get("ssl", False),
+        )
+    elif store_type == "etcd":
+        etcd_config = store_config.get("etcd", {})
+        return EtcdClusterStore(
+            endpoints=etcd_config.get("endpoints"),
+            host=etcd_config.get("host", "localhost"),
+            port=etcd_config.get("port", 2379),
+            cert_file=etcd_config.get("cert_file"),
+            key_file=etcd_config.get("key_file"),
+            ca_file=etcd_config.get("ca_cert"),
+            timeout=etcd_config.get("timeout", 10),
         )
     elif store_type == "memory":
         return InMemoryClusterStore()
