@@ -6,14 +6,26 @@ Medic Agent is an intelligent system that monitors kill events from Smith, evalu
 
 ## Features
 
+### Core Capabilities
 - **Kill Report Monitoring**: Real-time subscription to Smith's kill notification feed
 - **SIEM Integration**: Contextual threat intelligence queries for informed decision-making
 - **Multi-Mode Operation**: Observer, Manual, Semi-Auto, and Full-Auto modes
-- **Risk Assessment**: Advanced risk scoring with configurable thresholds
-- **Resurrection Workflow**: Automated execution with monitoring and rollback
-- **Adaptive Learning**: Outcome tracking and threshold adjustment
-- **Smith Collaboration**: Veto protocol and negotiation support
-- **Production Ready**: Prometheus metrics, error handling, circuit breakers
+- **Risk Assessment**: Advanced risk scoring with configurable thresholds and weights
+- **Resurrection Workflow**: Automated execution with health monitoring and rollback
+- **Adaptive Learning**: Outcome tracking, pattern analysis, and threshold adjustment
+
+### Advanced Features
+- **Smith Collaboration**: Bidirectional negotiation and veto protocol support
+- **Edge Case Detection**: Rapid kills, cascading failures, and flapping module detection
+- **Self-Monitoring**: Agent health monitoring with auto-remediation
+- **Multi-Cluster Support**: Distributed deployments with leader election
+
+### Production Ready
+- **REST API**: Complete FastAPI-based REST API with OpenAPI documentation
+- **WebSocket Support**: Real-time event streaming for dashboards
+- **Web Dashboard**: Built-in monitoring dashboard with live updates
+- **Prometheus Metrics**: Full observability with metrics export
+- **Security**: API key authentication, RBAC, rate limiting, and security headers
 
 ## Current Version
 
@@ -21,8 +33,6 @@ Medic Agent is an intelligent system that monitors kill events from Smith, evalu
 
 [![Build Status](https://github.com/kase1111-hash/medic-agent/workflows/CI/badge.svg)](https://github.com/kase1111-hash/medic-agent/actions)
 [![License](https://img.shields.io/badge/license-proprietary-red.svg)](LICENSE.md)
-
-> **Note**: This is an alpha release. APIs and configurations may change.
 
 ## Quick Start
 
@@ -69,6 +79,11 @@ smith:
 
 siem:
   endpoint: "http://localhost:8080/siem"
+
+interfaces:
+  web:
+    enabled: true
+    port: 8000
 ```
 
 ### Running
@@ -89,27 +104,51 @@ python main.py --web --port 8000
 python main.py --version
 ```
 
+### Accessing the Dashboard
+
+When the web interface is enabled, access:
+
+- **Dashboard**: http://localhost:8000/dashboard
+- **API Docs**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [API Reference](docs/API.md) | Complete REST API documentation |
+| [Configuration Guide](docs/CONFIGURATION.md) | Configuration options and examples |
+| [Architecture](docs/ARCHITECTURE.md) | System architecture and design patterns |
+| [Specification Sheet](docs/SPEC_SHEET.md) | Technical specifications and data models |
+
 ## Architecture
 
 ```
-Smith Kill Notification --> [Medic Listener]
-                                 |
-                                 v
-                          [SIEM Query Adapter]
-                                 |
-                                 v
-                     [Decision Logic Engine]
-                                 |
-              +------------------+-----------------+
-              |                                    |
-        [Human Review Interface]           [Auto Resurrection]
-              |                                    |
-              v                                    v
-      [Manual Resurrection Flow]         [Auto Execution + Monitor]
-              \__________________________/
-                           |
-                           v
-                 [Outcome Logging + Learning]
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              External Systems                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐                  │
+│  │    Smith    │    │    SIEM     │    │  Dashboard  │                  │
+│  │ (Security)  │    │  (Intel)    │    │  (Users)    │                  │
+│  └──────┬──────┘    └──────┬──────┘    └──────┬──────┘                  │
+└─────────┼──────────────────┼──────────────────┼─────────────────────────┘
+          │                  │                  │
+          ▼                  ▼                  ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           Medic Agent                                    │
+├─────────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐  │
+│  │   Interfaces    │  │   Integration   │  │      Learning           │  │
+│  │  - REST API     │  │  - Smith Veto   │  │  - Outcome Store        │  │
+│  │  - WebSocket    │  │  - Negotiation  │  │  - Pattern Analysis     │  │
+│  │  - Dashboard    │  │  - Edge Cases   │  │  - Threshold Adapter    │  │
+│  │  - CLI          │  │  - Self-Monitor │  │  - Feedback System      │  │
+│  └─────────────────┘  └─────────────────┘  └─────────────────────────┘  │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │                          Core Engine                             │    │
+│  │  Listener → Decision → Risk Assessment → Resurrection → Monitor │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Project Structure
@@ -121,8 +160,10 @@ medic-agent/
 │   ├── siem_interface.py    # SIEM query adapter
 │   ├── decision.py          # Decision engine
 │   ├── risk.py              # Risk assessment
+│   ├── event_bus.py         # Internal event pub/sub
 │   ├── errors.py            # Custom exceptions
 │   ├── metrics.py           # Prometheus metrics
+│   ├── validation.py        # Input validation
 │   └── models.py            # Data models
 ├── execution/               # Resurrection execution
 │   ├── resurrector.py       # Resurrection workflow
@@ -130,47 +171,84 @@ medic-agent/
 │   ├── recommendation.py    # Proposal generation
 │   └── auto_resurrect.py    # Auto-resurrection logic
 ├── interfaces/              # User interfaces
-│   ├── cli.py               # Command-line interface
 │   ├── web.py               # REST API (FastAPI)
+│   ├── dashboard.py         # Web dashboard UI
+│   ├── auth.py              # Authentication & RBAC
+│   ├── cli.py               # Command-line interface
 │   └── approval_queue.py    # Human approval queue
 ├── learning/                # Adaptive learning system
 │   ├── outcome_store.py     # Outcome database
 │   ├── pattern_analyzer.py  # Pattern detection
-│   └── threshold_adapter.py # Threshold adjustment
+│   ├── threshold_adapter.py # Threshold adjustment
+│   └── feedback.py          # Feedback collection
 ├── integration/             # External integrations
 │   ├── smith_negotiator.py  # Smith collaboration
 │   ├── veto_protocol.py     # Veto handling
-│   └── edge_case_manager.py # Edge case handling
+│   ├── edge_case_manager.py # Edge case handling
+│   ├── self_monitor.py      # Agent health monitoring
+│   └── cluster_manager.py   # Multi-cluster support
 ├── config/                  # Configuration files
 │   ├── medic.yaml           # Main configuration
-│   └── constitution.yaml    # Phase toggles
+│   ├── constitution.yaml    # Phase toggles & constraints
+│   └── medic.production.yaml # Production template
 ├── tests/                   # Test suite
+│   ├── unit/                # Unit tests
+│   ├── integration/         # Integration tests
+│   ├── security/            # Security tests
+│   └── performance/         # Performance tests
 ├── kubernetes/              # K8s manifests
 ├── deploy/                  # Deployment configs
+├── docs/                    # Documentation
 └── main.py                  # Application entry point
 ```
 
 ## Operating Modes
 
-| Mode | Description | Human Review |
-|------|-------------|--------------|
-| **Observer** | Log decisions without action | N/A |
-| **Manual** | All resurrections require approval | Required |
-| **Semi-Auto** | Auto-approve low-risk only | Medium/High risk |
-| **Full-Auto** | Fully autonomous operation | Critical only |
+| Mode | Description | Human Review | Auto-Resurrect |
+|------|-------------|--------------|----------------|
+| **Observer** | Log decisions without action | N/A | No |
+| **Manual** | All resurrections require approval | Required | No |
+| **Semi-Auto** | Auto-approve low-risk only | Medium/High risk | Low-risk |
+| **Full-Auto** | Fully autonomous operation | Critical only | Yes |
 
 ## API Endpoints
 
-When running with `--web`, the following endpoints are available:
+When the web interface is enabled, the following endpoints are available:
 
-- `GET /health` - Health check
+### Health & Status
+- `GET /health` - Health check (no auth required)
 - `GET /status` - System status
-- `GET /api/v1/queue` - Pending approvals
+
+### Queue Management
+- `GET /api/v1/queue` - List pending approvals
+- `GET /api/v1/queue/{id}` - Get queue item
 - `POST /api/v1/queue/{id}/approve` - Approve resurrection
 - `POST /api/v1/queue/{id}/deny` - Deny resurrection
+
+### Decisions & Resurrections
 - `GET /api/v1/decisions` - List decisions
 - `GET /api/v1/resurrections` - List resurrections
+- `POST /api/v1/resurrections/{id}/rollback` - Trigger rollback
+
+### Outcomes & Feedback
+- `GET /api/v1/outcomes` - List outcomes
+- `GET /api/v1/outcomes/stats` - Outcome statistics
+- `POST /api/v1/feedback` - Submit feedback
+
+### Configuration & Reports
+- `GET /api/v1/config` - Current configuration
+- `GET /api/v1/config/thresholds` - Risk thresholds
+- `GET /api/v1/reports/daily` - Daily report
+- `GET /api/v1/reports/weekly` - Weekly report
+
+### Monitoring & Metrics
+- `GET /api/v1/monitors` - Active monitoring sessions
 - `GET /api/v1/metrics` - Prometheus metrics
+
+### WebSocket
+- `WS /ws` - Real-time event stream
+
+See [API Reference](docs/API.md) for complete documentation.
 
 ## Docker Deployment
 
@@ -193,6 +271,15 @@ kubectl apply -k kubernetes/
 
 # Check status
 kubectl -n medic-agent get pods
+
+# View logs
+kubectl -n medic-agent logs -f deployment/medic-agent
+```
+
+For production deployment:
+
+```bash
+kubectl apply -k kubernetes/overlays/production/
 ```
 
 ## Testing
@@ -216,32 +303,68 @@ pytest -m "not slow and not performance"
 
 ## Security
 
-### Before Deployment
+### Environment Variables
 
-1. **Create environment file** with secure credentials:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your SIEM_API_KEY and GRAFANA_PASSWORD
-   ```
+Required environment variables for production:
 
-2. **Configure CORS origins** in `config/medic.yaml`:
-   ```yaml
-   interfaces:
-     web:
-       cors_origins:
-         - "https://your-dashboard.example.com"
-   ```
+```bash
+export SIEM_API_KEY="your-siem-api-key"
+export MEDIC_ADMIN_API_KEY="your-admin-api-key"
+export MEDIC_OPERATOR_API_KEY="your-operator-api-key"
+export MEDIC_VIEWER_API_KEY="your-viewer-api-key"
+```
 
-3. **Use external secrets** in Kubernetes (production):
-   ```bash
-   kubectl apply -k kubernetes/overlays/production/
-   ```
+### CORS Configuration
 
-See [CHANGELOG.md](CHANGELOG.md) for security notes and known limitations.
+Configure allowed origins in `config/medic.yaml`:
+
+```yaml
+interfaces:
+  web:
+    cors_origins:
+      - "https://your-dashboard.example.com"
+      - "https://admin.example.com"
+```
+
+### Security Features
+
+- API key authentication with SHA-256 hashing
+- Role-based access control (Admin, Operator, Viewer, API)
+- Rate limiting (120 requests/minute)
+- Request size limiting (10MB max)
+- Security headers (CSP, HSTS, X-Frame-Options)
+- Input validation and sanitization
+- Constant-time comparison for auth tokens
+
+See [Configuration Guide](docs/CONFIGURATION.md) for security configuration details.
+
+## Monitoring
+
+### Prometheus Metrics
+
+Metrics are exported on port 9090:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `medic_kills_received_total` | Counter | Kill reports received |
+| `medic_decisions_total` | Counter | Decisions by outcome |
+| `medic_resurrections_total` | Counter | Resurrections attempted |
+| `medic_resurrection_duration_seconds` | Histogram | Resurrection duration |
+| `medic_errors_total` | Counter | Errors by category |
+| `medic_queue_size` | Gauge | Approval queue size |
+
+### Grafana Dashboard
+
+A pre-configured Grafana dashboard is included in `deploy/grafana/`.
 
 ## Configuration Reference
 
-See [docs/SPEC_SHEET.md](docs/SPEC_SHEET.md) for detailed configuration options and API specifications.
+See [Configuration Guide](docs/CONFIGURATION.md) for detailed configuration options.
+
+Key configuration files:
+- `config/medic.yaml` - Main configuration
+- `config/constitution.yaml` - Phase feature toggles and safety constraints
+- `config/medic.production.yaml` - Production template
 
 ## Contributing
 

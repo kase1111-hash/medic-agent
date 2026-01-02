@@ -635,7 +635,7 @@ class WebAPI:
                 status="healthy",
                 timestamp=datetime.utcnow().isoformat(),
                 checks=checks,
-                version="6.0.0",
+                version="0.1.0-alpha",
                 uptime_seconds=round(uptime, 1),
             )
 
