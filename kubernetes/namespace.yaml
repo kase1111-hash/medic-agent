@@ -1,0 +1,9 @@
+# Medic Agent - Kubernetes Namespace
+# Phase 7: Deployment & Operations
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: medic-agent
+  labels:
+    app.kubernetes.io/name: medic-agent
+    app.kubernetes.io/part-of: medic-system

@@ -1,0 +1,21 @@
+# Prometheus Configuration for Medic Agent
+# Phase 7: Deployment & Operations
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'medic-agent'
+
+scrape_configs:
+  # Medic Agent metrics
+  - job_name: 'medic-agent'
+    static_configs:
+      - targets: ['medic-agent:9090']
+    metrics_path: /metrics
+    scheme: http
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

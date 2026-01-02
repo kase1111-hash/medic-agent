@@ -70,6 +70,17 @@ phases:
       circuit_breakers: true
       comprehensive_testing: true
 
+  phase_7_deployment:
+    enabled: true
+    description: "Deployment & Operations - containerization, CI/CD, Kubernetes"
+    features:
+      containerization: true
+      docker_compose: true
+      kubernetes_manifests: true
+      cicd_pipeline: true
+      horizontal_scaling: true
+      health_probes: true
+
 # Safety constraints applied across all phases
 constraints:
   # Maximum auto-resurrections per hour (Phase 3+)

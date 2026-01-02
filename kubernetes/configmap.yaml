@@ -1,0 +1,112 @@
+# Medic Agent - ConfigMap
+# Phase 7: Deployment & Operations
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: medic-agent-config
+  namespace: medic-agent
+  labels:
+    app.kubernetes.io/name: medic-agent
+    app.kubernetes.io/component: config
+data:
+  medic.yaml: |
+    # Medic Agent Configuration for Kubernetes
+    version: "1.0"
+
+    mode:
+      current: "semi_auto"
+      fallback: "observer"
+
+    smith:
+      event_bus:
+        type: "redis"
+        host: "redis.medic-agent.svc.cluster.local"
+        port: 6379
+        topic: "smith.events.kill_notifications"
+        response_topic: "medic.responses"
+      veto_protocol:
+        enabled: true
+        timeout_seconds: 30
+      negotiation:
+        enabled: true
+        request_topic: "medic.to_smith"
+        response_topic: "smith.to_medic"
+
+    siem:
+      adapter: "rest"
+      endpoint: "${SIEM_ENDPOINT}"
+      auth:
+        type: "api_key"
+        key_env: "SIEM_API_KEY"
+      timeout_seconds: 30
+      retry:
+        max_attempts: 3
+        backoff_seconds: 2
+
+    decision:
+      default_timeout_minutes: 60
+      confidence_threshold: 0.7
+      auto_approve:
+        enabled: true
+        max_risk_level: "low"
+        min_confidence: 0.85
+
+    risk:
+      thresholds:
+        minimal: 0.2
+        low: 0.4
+        medium: 0.6
+        high: 0.8
+      weights:
+        smith_confidence: 0.3
+        siem_risk_score: 0.25
+        false_positive_history: 0.2
+        module_criticality: 0.15
+        time_of_day: 0.1
+
+    resurrection:
+      monitoring_duration_minutes: 30
+      health_check_interval_seconds: 30
+      max_retry_attempts: 2
+      rollback:
+        enabled: true
+        auto_trigger_on_anomaly: true
+        anomaly_threshold: 0.7
+
+    interfaces:
+      web:
+        enabled: true
+        port: 8000
+        host: "0.0.0.0"
+      approval_queue:
+        max_pending: 100
+        timeout_hours: 24
+
+    learning:
+      enabled: true
+      database:
+        type: "sqlite"
+        path: "/app/data/outcomes.db"
+      analysis:
+        schedule: "daily"
+        min_samples: 50
+      threshold_adjustment:
+        enabled: true
+        max_adjustment_percent: 10
+
+    metrics:
+      enabled: true
+      port: 9090
+      labels:
+        environment: "production"
+        service: "medic-agent"
+
+    logging:
+      level: "INFO"
+      format: "json"
+      outputs:
+        - type: "console"
+        - type: "file"
+          path: "/app/logs/medic.log"
+          rotation: "daily"
+          retention_days: 7
