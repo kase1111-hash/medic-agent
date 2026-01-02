@@ -1,6 +1,6 @@
 # Medic Agent API Reference
 
-Complete REST API documentation for Medic Agent v6.0.
+Complete REST API documentation for Medic Agent v0.1.0-alpha.
 
 ## Table of Contents
 
@@ -156,7 +156,7 @@ Check system health. No authentication required.
     "outcome_store": "ok",
     "decision_logger": "ok"
   },
-  "version": "6.0.0",
+  "version": "0.1.0-alpha",
   "uptime_seconds": 3600.0
 }
 ```

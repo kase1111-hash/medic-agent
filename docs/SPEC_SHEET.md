@@ -1656,7 +1656,7 @@ scrape_configs:
 | 3 | Semi-Autonomous | Complete | v3.0 |
 | 4 | Learning System | Complete | v4.0 |
 | 5 | Full Autonomous | Complete | v5.0 |
-| 6 | Production Readiness | Complete | v6.0 |
+| 6 | Production Readiness | Complete | v0.1.0-alpha |
 | 7 | Deployment & Operations | Complete | v7.0 |
 
 ---

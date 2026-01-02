@@ -29,7 +29,7 @@ Medic Agent is an intelligent system that monitors kill events from Smith, evalu
 
 ## Current Version
 
-**v6.0.0** - Production-ready release with complete feature set
+**v0.1.0-alpha** - Initial alpha release with all core features implemented
 
 [![Build Status](https://github.com/kase1111-hash/medic-agent/workflows/CI/badge.svg)](https://github.com/kase1111-hash/medic-agent/actions)
 [![License](https://img.shields.io/badge/license-proprietary-red.svg)](LICENSE.md)
