@@ -7,8 +7,12 @@ for consistent, queryable log output.
 
 import json
 import logging
+import logging.handlers
+import os
 import sys
-from datetime import datetime
+import threading
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional
 import uuid
@@ -204,6 +208,133 @@ class MedicLogger(logging.Logger):
 logging.setLoggerClass(MedicLogger)
 
 
+def _get_rotation_interval(rotation: str) -> tuple:
+    """
+    Get the rotation interval for TimedRotatingFileHandler.
+
+    Args:
+        rotation: Rotation strategy ("hourly", "daily", "weekly", "size:<bytes>")
+
+    Returns:
+        Tuple of (when, interval) for TimedRotatingFileHandler,
+        or None if using size-based rotation
+    """
+    rotation_lower = rotation.lower()
+    if rotation_lower == "hourly":
+        return ("H", 1)
+    elif rotation_lower == "daily":
+        return ("midnight", 1)
+    elif rotation_lower == "weekly":
+        return ("W0", 1)  # Rotate on Monday
+    elif rotation_lower.startswith("size:"):
+        return None  # Signal to use RotatingFileHandler
+    else:
+        # Default to daily
+        return ("midnight", 1)
+
+
+def _cleanup_old_logs(log_dir: Path, base_name: str, retention_days: int) -> None:
+    """
+    Remove log files older than retention_days.
+
+    Args:
+        log_dir: Directory containing log files
+        base_name: Base name of the log file (e.g., "medic.log")
+        retention_days: Number of days to retain log files
+    """
+    if retention_days <= 0:
+        return
+
+    cutoff_time = datetime.now() - timedelta(days=retention_days)
+    cutoff_timestamp = cutoff_time.timestamp()
+
+    try:
+        # Find all rotated log files matching the base pattern
+        for log_file in log_dir.iterdir():
+            if not log_file.is_file():
+                continue
+
+            # Match rotated files: base_name.YYYY-MM-DD or base_name.1, base_name.2, etc.
+            file_name = log_file.name
+            if file_name.startswith(base_name) and file_name != base_name:
+                try:
+                    file_mtime = log_file.stat().st_mtime
+                    if file_mtime < cutoff_timestamp:
+                        log_file.unlink()
+                        logging.getLogger("medic.logger").debug(
+                            f"Removed old log file: {log_file}"
+                        )
+                except OSError as e:
+                    logging.getLogger("medic.logger").warning(
+                        f"Failed to remove old log file {log_file}: {e}"
+                    )
+    except OSError as e:
+        logging.getLogger("medic.logger").warning(
+            f"Failed to scan log directory {log_dir}: {e}"
+        )
+
+
+class LogRetentionCleaner:
+    """
+    Background thread that periodically cleans up old log files.
+    """
+
+    _instance: Optional["LogRetentionCleaner"] = None
+    _lock = threading.Lock()
+
+    def __init__(self, log_dir: Path, base_name: str, retention_days: int):
+        self.log_dir = log_dir
+        self.base_name = base_name
+        self.retention_days = retention_days
+        self._stop_event = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+
+    @classmethod
+    def start_cleaner(
+        cls, log_dir: Path, base_name: str, retention_days: int
+    ) -> "LogRetentionCleaner":
+        """Start the singleton retention cleaner."""
+        with cls._lock:
+            if cls._instance is not None:
+                cls._instance.stop()
+
+            cls._instance = cls(log_dir, base_name, retention_days)
+            cls._instance._start()
+            return cls._instance
+
+    @classmethod
+    def stop_cleaner(cls) -> None:
+        """Stop the singleton retention cleaner."""
+        with cls._lock:
+            if cls._instance is not None:
+                cls._instance.stop()
+                cls._instance = None
+
+    def _start(self) -> None:
+        """Start the cleanup thread."""
+        self._thread = threading.Thread(
+            target=self._cleanup_loop, daemon=True, name="log-retention-cleaner"
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        """Stop the cleanup thread."""
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=5.0)
+
+    def _cleanup_loop(self) -> None:
+        """Periodically clean up old log files."""
+        # Run cleanup immediately on start
+        _cleanup_old_logs(self.log_dir, self.base_name, self.retention_days)
+
+        # Check every hour for old logs to clean up
+        cleanup_interval = 3600  # 1 hour
+
+        while not self._stop_event.wait(cleanup_interval):
+            _cleanup_old_logs(self.log_dir, self.base_name, self.retention_days)
+
+
 def configure_logging(
     level: str = "INFO",
     format_type: str = "json",
@@ -218,8 +349,12 @@ def configure_logging(
         level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         format_type: Output format ("json" or "text")
         log_file: Optional file path for file logging
-        rotation: Log rotation strategy (currently not implemented)
-        retention_days: Days to retain log files (currently not implemented)
+        rotation: Log rotation strategy. Options:
+            - "hourly": Rotate every hour
+            - "daily": Rotate at midnight (default)
+            - "weekly": Rotate weekly on Monday
+            - "size:<bytes>": Rotate when file exceeds size (e.g., "size:10485760" for 10MB)
+        retention_days: Days to retain log files (default: 30, 0 to disable cleanup)
     """
     root_logger = logging.getLogger("medic")
     root_logger.setLevel(getattr(logging, level.upper()))
@@ -235,14 +370,43 @@ def configure_logging(
         console_handler.setFormatter(TextFormatter())
     root_logger.addHandler(console_handler)
 
-    # File handler if specified
+    # File handler if specified with rotation support
     if log_file:
         log_path = Path(log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
-        file_handler = logging.FileHandler(log_file)
+        rotation_config = _get_rotation_interval(rotation)
+
+        if rotation_config is None:
+            # Size-based rotation
+            try:
+                max_bytes = int(rotation.split(":")[1])
+            except (IndexError, ValueError):
+                max_bytes = 10 * 1024 * 1024  # Default 10MB
+
+            file_handler = logging.handlers.RotatingFileHandler(
+                log_file,
+                maxBytes=max_bytes,
+                backupCount=retention_days,  # Keep up to retention_days backup files
+            )
+        else:
+            # Time-based rotation
+            when, interval = rotation_config
+            file_handler = logging.handlers.TimedRotatingFileHandler(
+                log_file,
+                when=when,
+                interval=interval,
+                backupCount=0,  # We handle cleanup ourselves for more control
+            )
+
         file_handler.setFormatter(JSONFormatter())  # Always JSON for files
         root_logger.addHandler(file_handler)
+
+        # Start background retention cleaner for time-based rotation
+        if rotation_config is not None and retention_days > 0:
+            LogRetentionCleaner.start_cleaner(
+                log_path.parent, log_path.name, retention_days
+            )
 
 
 def get_logger(name: str) -> MedicLogger:

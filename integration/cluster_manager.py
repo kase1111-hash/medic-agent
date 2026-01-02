@@ -1,0 +1,623 @@
+"""
+Medic Agent Multi-Cluster Support
+
+Provides cluster coordination, leader election, and state synchronization
+for running Medic agents across multiple Kubernetes clusters.
+
+Features:
+- Cluster registration and discovery
+- Leader election using distributed locks
+- State synchronization across clusters
+- Cross-cluster event propagation
+- Failover and recovery handling
+"""
+
+import asyncio
+import hashlib
+import json
+import time
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, Set
+import uuid
+
+from core.logger import get_logger
+
+logger = get_logger("integration.cluster")
+
+
+class ClusterRole(str, Enum):
+    """Role of a cluster in the federation."""
+    LEADER = "leader"
+    FOLLOWER = "follower"
+    CANDIDATE = "candidate"
+    OBSERVER = "observer"
+
+
+class ClusterState(str, Enum):
+    """State of a cluster."""
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    UNREACHABLE = "unreachable"
+    SYNCING = "syncing"
+
+
+class SyncScope(str, Enum):
+    """Scope of data to synchronize."""
+    DECISIONS = "decisions"
+    OUTCOMES = "outcomes"
+    THRESHOLDS = "thresholds"
+    CONFIG = "config"
+    ALL = "all"
+
+
+@dataclass
+class ClusterInfo:
+    """Information about a cluster in the federation."""
+    cluster_id: str
+    name: str
+    endpoint: str
+    role: ClusterRole
+    state: ClusterState
+    region: str = ""
+    zone: str = ""
+    version: str = ""
+    last_heartbeat: Optional[datetime] = None
+    last_sync: Optional[datetime] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "cluster_id": self.cluster_id,
+            "name": self.name,
+            "endpoint": self.endpoint,
+            "role": self.role.value,
+            "state": self.state.value,
+            "region": self.region,
+            "zone": self.zone,
+            "version": self.version,
+            "last_heartbeat": self.last_heartbeat.isoformat() if self.last_heartbeat else None,
+            "last_sync": self.last_sync.isoformat() if self.last_sync else None,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ClusterInfo":
+        """Create from dictionary."""
+        return cls(
+            cluster_id=data["cluster_id"],
+            name=data["name"],
+            endpoint=data["endpoint"],
+            role=ClusterRole(data["role"]),
+            state=ClusterState(data["state"]),
+            region=data.get("region", ""),
+            zone=data.get("zone", ""),
+            version=data.get("version", ""),
+            last_heartbeat=datetime.fromisoformat(data["last_heartbeat"]) if data.get("last_heartbeat") else None,
+            last_sync=datetime.fromisoformat(data["last_sync"]) if data.get("last_sync") else None,
+            metadata=data.get("metadata", {}),
+        )
+
+
+@dataclass
+class SyncEvent:
+    """An event to be synchronized across clusters."""
+    event_id: str
+    source_cluster: str
+    scope: SyncScope
+    action: str
+    data: Dict[str, Any]
+    timestamp: datetime
+    version: int = 1
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "event_id": self.event_id,
+            "source_cluster": self.source_cluster,
+            "scope": self.scope.value,
+            "action": self.action,
+            "data": self.data,
+            "timestamp": self.timestamp.isoformat(),
+            "version": self.version,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "SyncEvent":
+        """Create from dictionary."""
+        return cls(
+            event_id=data["event_id"],
+            source_cluster=data["source_cluster"],
+            scope=SyncScope(data["scope"]),
+            action=data["action"],
+            data=data["data"],
+            timestamp=datetime.fromisoformat(data["timestamp"]),
+            version=data.get("version", 1),
+        )
+
+
+class ClusterStore:
+    """
+    Abstract interface for cluster state storage.
+
+    Implementations can use Redis, etcd, or other distributed stores.
+    """
+
+    async def register_cluster(self, info: ClusterInfo) -> bool:
+        """Register a cluster in the federation."""
+        raise NotImplementedError
+
+    async def deregister_cluster(self, cluster_id: str) -> bool:
+        """Remove a cluster from the federation."""
+        raise NotImplementedError
+
+    async def get_cluster(self, cluster_id: str) -> Optional[ClusterInfo]:
+        """Get cluster information."""
+        raise NotImplementedError
+
+    async def list_clusters(self) -> List[ClusterInfo]:
+        """List all clusters in the federation."""
+        raise NotImplementedError
+
+    async def update_cluster(self, info: ClusterInfo) -> bool:
+        """Update cluster information."""
+        raise NotImplementedError
+
+    async def acquire_leader_lock(self, cluster_id: str, ttl_seconds: int = 30) -> bool:
+        """Try to acquire the leader lock."""
+        raise NotImplementedError
+
+    async def release_leader_lock(self, cluster_id: str) -> bool:
+        """Release the leader lock."""
+        raise NotImplementedError
+
+    async def get_leader(self) -> Optional[str]:
+        """Get the current leader cluster ID."""
+        raise NotImplementedError
+
+    async def push_sync_event(self, event: SyncEvent) -> bool:
+        """Push a sync event for propagation."""
+        raise NotImplementedError
+
+    async def get_pending_events(self, cluster_id: str, limit: int = 100) -> List[SyncEvent]:
+        """Get pending sync events for a cluster."""
+        raise NotImplementedError
+
+    async def ack_event(self, cluster_id: str, event_id: str) -> bool:
+        """Acknowledge receipt of a sync event."""
+        raise NotImplementedError
+
+
+class InMemoryClusterStore(ClusterStore):
+    """
+    In-memory cluster store for development and testing.
+
+    For production, use RedisClusterStore or EtcdClusterStore.
+    """
+
+    def __init__(self):
+        self._clusters: Dict[str, ClusterInfo] = {}
+        self._leader: Optional[str] = None
+        self._leader_lock_time: Optional[datetime] = None
+        self._leader_lock_ttl: int = 30
+        self._events: List[SyncEvent] = []
+        self._acked_events: Dict[str, Set[str]] = {}  # cluster_id -> set of event_ids
+        self._lock = asyncio.Lock()
+
+    async def register_cluster(self, info: ClusterInfo) -> bool:
+        async with self._lock:
+            self._clusters[info.cluster_id] = info
+            self._acked_events[info.cluster_id] = set()
+            logger.info(f"Cluster registered: {info.cluster_id} ({info.name})")
+            return True
+
+    async def deregister_cluster(self, cluster_id: str) -> bool:
+        async with self._lock:
+            if cluster_id in self._clusters:
+                del self._clusters[cluster_id]
+                if cluster_id in self._acked_events:
+                    del self._acked_events[cluster_id]
+                if self._leader == cluster_id:
+                    self._leader = None
+                    self._leader_lock_time = None
+                logger.info(f"Cluster deregistered: {cluster_id}")
+                return True
+            return False
+
+    async def get_cluster(self, cluster_id: str) -> Optional[ClusterInfo]:
+        return self._clusters.get(cluster_id)
+
+    async def list_clusters(self) -> List[ClusterInfo]:
+        return list(self._clusters.values())
+
+    async def update_cluster(self, info: ClusterInfo) -> bool:
+        async with self._lock:
+            if info.cluster_id in self._clusters:
+                self._clusters[info.cluster_id] = info
+                return True
+            return False
+
+    async def acquire_leader_lock(self, cluster_id: str, ttl_seconds: int = 30) -> bool:
+        async with self._lock:
+            now = datetime.utcnow()
+
+            # Check if lock is expired
+            if self._leader and self._leader_lock_time:
+                if now - self._leader_lock_time > timedelta(seconds=self._leader_lock_ttl):
+                    self._leader = None
+                    self._leader_lock_time = None
+
+            # Try to acquire lock
+            if self._leader is None:
+                self._leader = cluster_id
+                self._leader_lock_time = now
+                self._leader_lock_ttl = ttl_seconds
+                logger.info(f"Cluster {cluster_id} acquired leader lock")
+                return True
+
+            # Renew if already leader
+            if self._leader == cluster_id:
+                self._leader_lock_time = now
+                return True
+
+            return False
+
+    async def release_leader_lock(self, cluster_id: str) -> bool:
+        async with self._lock:
+            if self._leader == cluster_id:
+                self._leader = None
+                self._leader_lock_time = None
+                logger.info(f"Cluster {cluster_id} released leader lock")
+                return True
+            return False
+
+    async def get_leader(self) -> Optional[str]:
+        # Check if lock is expired
+        if self._leader and self._leader_lock_time:
+            if datetime.utcnow() - self._leader_lock_time > timedelta(seconds=self._leader_lock_ttl):
+                async with self._lock:
+                    self._leader = None
+                    self._leader_lock_time = None
+        return self._leader
+
+    async def push_sync_event(self, event: SyncEvent) -> bool:
+        async with self._lock:
+            self._events.append(event)
+            # Keep only last 1000 events
+            if len(self._events) > 1000:
+                self._events = self._events[-1000:]
+            return True
+
+    async def get_pending_events(self, cluster_id: str, limit: int = 100) -> List[SyncEvent]:
+        acked = self._acked_events.get(cluster_id, set())
+        pending = [e for e in self._events if e.event_id not in acked and e.source_cluster != cluster_id]
+        return pending[:limit]
+
+    async def ack_event(self, cluster_id: str, event_id: str) -> bool:
+        async with self._lock:
+            if cluster_id not in self._acked_events:
+                self._acked_events[cluster_id] = set()
+            self._acked_events[cluster_id].add(event_id)
+            return True
+
+
+class ClusterManager:
+    """
+    Manages cluster federation for multi-cluster Medic deployments.
+
+    Responsibilities:
+    - Cluster registration and discovery
+    - Leader election
+    - State synchronization
+    - Cross-cluster communication
+    - Failover handling
+    """
+
+    def __init__(
+        self,
+        cluster_id: str,
+        cluster_name: str,
+        endpoint: str,
+        store: Optional[ClusterStore] = None,
+        region: str = "",
+        zone: str = "",
+    ):
+        self.cluster_id = cluster_id
+        self.cluster_name = cluster_name
+        self.endpoint = endpoint
+        self.region = region
+        self.zone = zone
+
+        self._store = store or InMemoryClusterStore()
+        self._role = ClusterRole.OBSERVER
+        self._state = ClusterState.HEALTHY
+        self._running = False
+
+        # Background tasks
+        self._heartbeat_task: Optional[asyncio.Task] = None
+        self._election_task: Optional[asyncio.Task] = None
+        self._sync_task: Optional[asyncio.Task] = None
+
+        # Event handlers
+        self._event_handlers: Dict[SyncScope, List[Callable]] = {
+            scope: [] for scope in SyncScope
+        }
+
+        # Configuration
+        self._heartbeat_interval = 10  # seconds
+        self._election_interval = 15  # seconds
+        self._sync_interval = 5  # seconds
+        self._leader_ttl = 30  # seconds
+
+    @property
+    def role(self) -> ClusterRole:
+        """Get the current cluster role."""
+        return self._role
+
+    @property
+    def state(self) -> ClusterState:
+        """Get the current cluster state."""
+        return self._state
+
+    @property
+    def is_leader(self) -> bool:
+        """Check if this cluster is the leader."""
+        return self._role == ClusterRole.LEADER
+
+    def get_cluster_info(self) -> ClusterInfo:
+        """Get information about this cluster."""
+        return ClusterInfo(
+            cluster_id=self.cluster_id,
+            name=self.cluster_name,
+            endpoint=self.endpoint,
+            role=self._role,
+            state=self._state,
+            region=self.region,
+            zone=self.zone,
+            version="0.2.0",
+            last_heartbeat=datetime.utcnow(),
+        )
+
+    async def start(self) -> None:
+        """Start the cluster manager."""
+        if self._running:
+            return
+
+        self._running = True
+
+        # Register this cluster
+        await self._store.register_cluster(self.get_cluster_info())
+
+        # Start background tasks
+        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+        self._election_task = asyncio.create_task(self._election_loop())
+        self._sync_task = asyncio.create_task(self._sync_loop())
+
+        logger.info(f"Cluster manager started: {self.cluster_id}")
+
+    async def stop(self) -> None:
+        """Stop the cluster manager."""
+        self._running = False
+
+        # Cancel background tasks
+        for task in [self._heartbeat_task, self._election_task, self._sync_task]:
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+        # Release leader lock if held
+        if self._role == ClusterRole.LEADER:
+            await self._store.release_leader_lock(self.cluster_id)
+
+        # Deregister cluster
+        await self._store.deregister_cluster(self.cluster_id)
+
+        logger.info(f"Cluster manager stopped: {self.cluster_id}")
+
+    def register_event_handler(
+        self,
+        scope: SyncScope,
+        handler: Callable[[SyncEvent], None],
+    ) -> None:
+        """Register a handler for sync events."""
+        self._event_handlers[scope].append(handler)
+
+    async def publish_event(
+        self,
+        scope: SyncScope,
+        action: str,
+        data: Dict[str, Any],
+    ) -> str:
+        """
+        Publish an event for synchronization across clusters.
+
+        Args:
+            scope: Type of data being synchronized
+            action: Action performed (create, update, delete)
+            data: Event data
+
+        Returns:
+            Event ID
+        """
+        event = SyncEvent(
+            event_id=str(uuid.uuid4()),
+            source_cluster=self.cluster_id,
+            scope=scope,
+            action=action,
+            data=data,
+            timestamp=datetime.utcnow(),
+        )
+
+        await self._store.push_sync_event(event)
+        logger.debug(f"Published sync event: {event.event_id} ({scope.value}/{action})")
+
+        return event.event_id
+
+    async def get_clusters(self) -> List[ClusterInfo]:
+        """Get list of all clusters in the federation."""
+        return await self._store.list_clusters()
+
+    async def get_leader_cluster(self) -> Optional[ClusterInfo]:
+        """Get the leader cluster information."""
+        leader_id = await self._store.get_leader()
+        if leader_id:
+            return await self._store.get_cluster(leader_id)
+        return None
+
+    def get_statistics(self) -> Dict[str, Any]:
+        """Get cluster manager statistics."""
+        return {
+            "cluster_id": self.cluster_id,
+            "cluster_name": self.cluster_name,
+            "role": self._role.value,
+            "state": self._state.value,
+            "region": self.region,
+            "zone": self.zone,
+            "is_leader": self.is_leader,
+            "running": self._running,
+        }
+
+    async def _heartbeat_loop(self) -> None:
+        """Send periodic heartbeats to update cluster status."""
+        while self._running:
+            try:
+                info = self.get_cluster_info()
+                await self._store.update_cluster(info)
+
+                # Check health of other clusters
+                await self._check_cluster_health()
+
+            except Exception as e:
+                logger.error(f"Heartbeat error: {e}")
+
+            await asyncio.sleep(self._heartbeat_interval)
+
+    async def _election_loop(self) -> None:
+        """Participate in leader election."""
+        while self._running:
+            try:
+                current_leader = await self._store.get_leader()
+
+                if current_leader == self.cluster_id:
+                    # We are the leader, renew lock
+                    if await self._store.acquire_leader_lock(self.cluster_id, self._leader_ttl):
+                        self._role = ClusterRole.LEADER
+                    else:
+                        self._role = ClusterRole.FOLLOWER
+                elif current_leader is None:
+                    # No leader, try to become one
+                    self._role = ClusterRole.CANDIDATE
+                    if await self._store.acquire_leader_lock(self.cluster_id, self._leader_ttl):
+                        self._role = ClusterRole.LEADER
+                        logger.info(f"Cluster {self.cluster_id} became leader")
+                    else:
+                        self._role = ClusterRole.FOLLOWER
+                else:
+                    # Someone else is leader
+                    self._role = ClusterRole.FOLLOWER
+
+            except Exception as e:
+                logger.error(f"Election error: {e}")
+
+            await asyncio.sleep(self._election_interval)
+
+    async def _sync_loop(self) -> None:
+        """Process sync events from other clusters."""
+        while self._running:
+            try:
+                # Get pending events
+                events = await self._store.get_pending_events(self.cluster_id)
+
+                for event in events:
+                    await self._process_sync_event(event)
+                    await self._store.ack_event(self.cluster_id, event.event_id)
+
+            except Exception as e:
+                logger.error(f"Sync error: {e}")
+
+            await asyncio.sleep(self._sync_interval)
+
+    async def _process_sync_event(self, event: SyncEvent) -> None:
+        """Process a sync event from another cluster."""
+        logger.debug(f"Processing sync event: {event.event_id} from {event.source_cluster}")
+
+        # Call registered handlers
+        handlers = self._event_handlers.get(event.scope, [])
+        handlers.extend(self._event_handlers.get(SyncScope.ALL, []))
+
+        for handler in handlers:
+            try:
+                if asyncio.iscoroutinefunction(handler):
+                    await handler(event)
+                else:
+                    handler(event)
+            except Exception as e:
+                logger.error(f"Error in sync event handler: {e}")
+
+    async def _check_cluster_health(self) -> None:
+        """Check health of all clusters in the federation."""
+        clusters = await self._store.list_clusters()
+        now = datetime.utcnow()
+
+        for cluster in clusters:
+            if cluster.cluster_id == self.cluster_id:
+                continue
+
+            if cluster.last_heartbeat:
+                age = now - cluster.last_heartbeat
+                if age > timedelta(seconds=self._heartbeat_interval * 3):
+                    # Mark as unreachable
+                    cluster.state = ClusterState.UNREACHABLE
+                    await self._store.update_cluster(cluster)
+                    logger.warning(f"Cluster {cluster.cluster_id} marked unreachable")
+
+
+# Singleton instance
+_cluster_manager: Optional[ClusterManager] = None
+
+
+def get_cluster_manager() -> Optional[ClusterManager]:
+    """Get the global cluster manager instance."""
+    return _cluster_manager
+
+
+def init_cluster_manager(
+    cluster_id: str,
+    cluster_name: str,
+    endpoint: str,
+    store: Optional[ClusterStore] = None,
+    region: str = "",
+    zone: str = "",
+) -> ClusterManager:
+    """Initialize the global cluster manager."""
+    global _cluster_manager
+    _cluster_manager = ClusterManager(
+        cluster_id=cluster_id,
+        cluster_name=cluster_name,
+        endpoint=endpoint,
+        store=store,
+        region=region,
+        zone=zone,
+    )
+    return _cluster_manager
+
+
+async def publish_cluster_event(
+    scope: SyncScope,
+    action: str,
+    data: Dict[str, Any],
+) -> Optional[str]:
+    """
+    Convenience function to publish a cluster event.
+
+    Returns event ID if cluster manager is active, None otherwise.
+    """
+    manager = get_cluster_manager()
+    if manager and manager._running:
+        return await manager.publish_event(scope, action, data)
+    return None
