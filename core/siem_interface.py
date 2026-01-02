@@ -416,6 +416,11 @@ def create_siem_adapter(config: Dict[str, Any]) -> SIEMAdapter:
 
     Returns:
         Configured SIEMAdapter instance
+
+    Security:
+        - API keys must be provided via environment variables
+        - Config file fallback is removed for security
+        - Production environments require valid API keys
     """
     import os
 
@@ -427,30 +432,46 @@ def create_siem_adapter(config: Dict[str, Any]) -> SIEMAdapter:
             default_risk_score=siem_config.get("default_risk_score", 0.5),
         )
 
-    # Get API key from environment variable or config
+    # Get API key from environment variable ONLY
+    # SECURITY: Config file fallback removed to prevent credential exposure
     auth_config = siem_config.get("auth", {})
-    api_key = None
-
-    # Priority: environment variable > config file
     key_env_name = auth_config.get("key_env", "SIEM_API_KEY")
     api_key = os.environ.get(key_env_name)
 
-    if not api_key:
-        # Fall back to config file (not recommended for production)
-        api_key = auth_config.get("api_key")
+    # Check environment to enforce API key in production
+    environment = os.environ.get("MEDIC_ENV", config.get("environment", "development"))
 
     if not api_key:
-        logger.warning(
-            f"SIEM API key not configured. Set {key_env_name} environment variable "
-            "or configure siem.auth.api_key in config file."
-        )
+        if environment == "production":
+            error_msg = (
+                f"SIEM API key is REQUIRED in production. "
+                f"Set {key_env_name} environment variable."
+            )
+            logger.critical(error_msg)
+            raise ValueError(error_msg)
+        else:
+            logger.warning(
+                f"SIEM API key not configured. Set {key_env_name} environment variable. "
+                f"Operating in {environment} mode without SIEM authentication."
+            )
 
-    # Validate API key format (basic check)
-    if api_key and api_key.startswith("dev-") or api_key == "replace-with-actual-api-key":
-        logger.warning(
-            "SIEM API key appears to be a placeholder. "
-            "Set a real API key for production use."
-        )
+    # Validate API key format
+    if api_key:
+        # Check minimum length
+        if len(api_key) < 16:
+            logger.error(f"SIEM API key is too short (minimum 16 characters)")
+            if environment == "production":
+                raise ValueError("SIEM API key too short for production use")
+
+        # Check for development placeholders
+        dangerous_patterns = ["dev-", "test-", "placeholder", "example", "replace-with"]
+        if any(pattern in api_key.lower() for pattern in dangerous_patterns):
+            error_msg = "SIEM API key appears to be a placeholder/development key"
+            logger.error(error_msg)
+            if environment == "production":
+                raise ValueError(f"{error_msg}. Not allowed in production.")
+            else:
+                logger.warning("Using placeholder API key - development only!")
 
     # Default to REST adapter
     return RESTSIEMAdapter(

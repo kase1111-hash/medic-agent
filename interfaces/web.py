@@ -6,12 +6,14 @@ Provides complete endpoints for queue management, decisions, outcomes,
 configuration, and reporting.
 
 Phase 6: Production Readiness - Complete REST API implementation.
+Security: Implements API key authentication and RBAC.
 """
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from collections import defaultdict
 import time
+import os
 
 from core.logger import get_logger
 
@@ -47,14 +49,27 @@ _rate_limiter = RateLimiter(requests_per_minute=120)
 
 # Try to import FastAPI, but don't fail if not installed
 try:
-    from fastapi import FastAPI, HTTPException, Query, Body, Path
+    from fastapi import FastAPI, HTTPException, Query, Body, Path, Request, Depends, Security
     from fastapi.responses import JSONResponse
     from fastapi.middleware.cors import CORSMiddleware
+    from starlette.middleware.base import BaseHTTPMiddleware
     from pydantic import BaseModel, Field
     FASTAPI_AVAILABLE = True
 except ImportError:
     FASTAPI_AVAILABLE = False
     logger.warning("FastAPI not installed. Web interface unavailable.")
+
+# Import authentication module
+try:
+    from interfaces.auth import (
+        verify_api_key, require_permission, require_role,
+        Permission, Role, APIKey, get_api_key_store
+    )
+    AUTH_AVAILABLE = FASTAPI_AVAILABLE
+except ImportError:
+    AUTH_AVAILABLE = False
+    if FASTAPI_AVAILABLE:
+        logger.warning("Auth module not available, API will run without authentication!")
 
 
 # Pydantic models for request/response validation
@@ -147,12 +162,35 @@ class WebAPI:
             redoc_url="/redoc",
         )
 
+        # Check for authentication in production
+        environment = self.config.get("environment", os.environ.get("MEDIC_ENV", "development"))
+        if not AUTH_AVAILABLE and environment == "production":
+            logger.critical("CRITICAL: Authentication not available in production!")
+            raise RuntimeError("Cannot run in production without authentication")
+
+        if not AUTH_AVAILABLE:
+            logger.warning(
+                "⚠️  API RUNNING WITHOUT AUTHENTICATION - NOT FOR PRODUCTION USE ⚠️"
+            )
+
         # Add CORS middleware
         # SECURITY: In production, configure specific origins via cors_origins config
         cors_origins = self.config.get("cors_origins", [])
         if not cors_origins:
             # Default to restrictive policy - only same-origin requests allowed
             cors_origins = []
+
+        # Validate CORS configuration in production
+        if environment == "production":
+            if "*" in cors_origins:
+                logger.critical("WILDCARD CORS IN PRODUCTION - SECURITY RISK!")
+                raise ValueError("Wildcard CORS not allowed in production")
+            # Ensure all origins use HTTPS in production
+            for origin in cors_origins:
+                if not origin.startswith("https://"):
+                    logger.error(f"Non-HTTPS CORS origin in production: {origin}")
+                    raise ValueError(f"Only HTTPS origins allowed in production, got: {origin}")
+
         self.app.add_middleware(
             CORSMiddleware,
             allow_origins=cors_origins,
@@ -161,7 +199,69 @@ class WebAPI:
             allow_headers=["Authorization", "Content-Type"],
         )
 
+        # Add rate limiting middleware
+        self._add_rate_limiting_middleware()
+
+        # Add security headers middleware
+        self._add_security_headers_middleware()
+
         self._setup_routes()
+
+    def _add_rate_limiting_middleware(self) -> None:
+        """Add rate limiting middleware."""
+        if not FASTAPI_AVAILABLE:
+            return
+
+        class RateLimitMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request: Request, call_next):
+                # Skip rate limiting for health check
+                if request.url.path == "/health":
+                    return await call_next(request)
+
+                # Use client IP as identifier
+                client_id = request.client.host if request.client else "unknown"
+
+                # Check rate limit
+                if not _rate_limiter.is_allowed(client_id):
+                    logger.warning(f"Rate limit exceeded for {client_id}")
+                    raise HTTPException(
+                        status_code=429,
+                        detail="Rate limit exceeded. Please try again later.",
+                        headers={"Retry-After": "60"},
+                    )
+
+                response = await call_next(request)
+                return response
+
+        self.app.add_middleware(RateLimitMiddleware)
+        logger.info("Rate limiting middleware enabled")
+
+    def _add_security_headers_middleware(self) -> None:
+        """Add security headers to all responses."""
+        if not FASTAPI_AVAILABLE:
+            return
+
+        @self.app.middleware("http")
+        async def add_security_headers(request: Request, call_next):
+            response = await call_next(request)
+
+            # Security headers
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["X-XSS-Protection"] = "1; mode=block"
+            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+            # HSTS in production
+            environment = self.config.get("environment", os.environ.get("MEDIC_ENV", "development"))
+            if environment == "production":
+                response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+            # Content Security Policy
+            response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'"
+
+            return response
+
+        logger.info("Security headers middleware enabled")
 
     def _wrap_response(self, data: Any, errors: Optional[List[str]] = None) -> Dict[str, Any]:
         """Wrap response in standard format."""
@@ -209,49 +309,80 @@ class WebAPI:
                 uptime_seconds=round(uptime, 1),
             )
 
-        @app.get("/status", tags=["Health"])
-        async def get_status():
-            """Get comprehensive system status."""
-            stats = await self.queue.get_stats()
+        # Status endpoint - requires authentication in production
+        if AUTH_AVAILABLE:
+            @app.get("/status", tags=["Health"], dependencies=[Depends(require_permission(Permission.VIEW_QUEUE))])
+            async def get_status(current_user: APIKey = Security(verify_api_key)):
+                """Get comprehensive system status. Requires authentication."""
+                stats = await self.queue.get_stats()
 
-            status = {
-                "mode": self.config.get("mode", "observer"),
-                "queue": stats,
-                "uptime_seconds": round((datetime.utcnow() - self._start_time).total_seconds(), 1),
-                "timestamp": datetime.utcnow().isoformat(),
-            }
+                status = {
+                    "mode": self.config.get("mode", "observer"),
+                    "queue": stats,
+                    "uptime_seconds": round((datetime.utcnow() - self._start_time).total_seconds(), 1),
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "authenticated_as": current_user.key_id,
+                }
 
-            if self.resurrector:
-                status["resurrector"] = self.resurrector.get_statistics()
+                if self.resurrector:
+                    status["resurrector"] = self.resurrector.get_statistics()
 
-            if self.monitor:
-                status["monitor"] = self.monitor.get_statistics()
+                if self.monitor:
+                    status["monitor"] = self.monitor.get_statistics()
 
-            if self.outcome_store:
-                try:
-                    status["outcomes"] = self.outcome_store.get_statistics().to_dict()
-                except Exception:
-                    status["outcomes"] = {"error": "unavailable"}
+                if self.outcome_store:
+                    try:
+                        status["outcomes"] = self.outcome_store.get_statistics().to_dict()
+                    except Exception:
+                        status["outcomes"] = {"error": "unavailable"}
 
-            return self._wrap_response(status)
+                return self._wrap_response(status)
+        else:
+            @app.get("/status", tags=["Health"])
+            async def get_status():
+                """Get comprehensive system status. ⚠️  NO AUTHENTICATION."""
+                stats = await self.queue.get_stats()
+
+                status = {
+                    "mode": self.config.get("mode", "observer"),
+                    "queue": stats,
+                    "uptime_seconds": round((datetime.utcnow() - self._start_time).total_seconds(), 1),
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "warning": "API running without authentication - not for production!",
+                }
+
+                if self.resurrector:
+                    status["resurrector"] = self.resurrector.get_statistics()
+
+                if self.monitor:
+                    status["monitor"] = self.monitor.get_statistics()
+
+                if self.outcome_store:
+                    try:
+                        status["outcomes"] = self.outcome_store.get_statistics().to_dict()
+                    except Exception:
+                        status["outcomes"] = {"error": "unavailable"}
+
+                return self._wrap_response(status)
 
         # ==================== Queue Endpoints ====================
 
-        @app.get("/api/v1/queue", tags=["Queue"])
-        async def list_queue(
-            limit: int = Query(50, ge=1, le=100, description="Maximum items to return"),
-            status_filter: Optional[str] = Query(None, description="Filter by status"),
-        ):
-            """List items in the approval queue."""
-            items = await self.queue.list_pending(limit=limit)
-            return self._wrap_response({
-                "items": [item.to_dict() for item in items],
-                "count": len(items),
-            })
+        if AUTH_AVAILABLE:
+            @app.get("/api/v1/queue", tags=["Queue"], dependencies=[Depends(require_permission(Permission.VIEW_QUEUE))])
+            async def list_queue(
+                limit: int = Query(50, ge=1, le=100, description="Maximum items to return"),
+                status_filter: Optional[str] = Query(None, description="Filter by status"),
+            ):
+                """List items in the approval queue. Requires VIEW_QUEUE permission."""
+                items = await self.queue.list_pending(limit=limit)
+                return self._wrap_response({
+                    "items": [item.to_dict() for item in items],
+                    "count": len(items),
+                })
 
-        @app.get("/api/v1/queue/{item_id}", tags=["Queue"])
-        async def get_queue_item(item_id: str = Path(..., description="Queue item ID")):
-            """Get a specific queue item."""
+            @app.get("/api/v1/queue/{item_id}", tags=["Queue"], dependencies=[Depends(require_permission(Permission.VIEW_QUEUE))])
+            async def get_queue_item(item_id: str = Path(..., description="Queue item ID")):
+                """Get a specific queue item. Requires VIEW_QUEUE permission."""
             item = await self.queue.get_item(item_id)
             if not item:
                 raise HTTPException(status_code=404, detail="Item not found")

@@ -522,43 +522,63 @@ class SQLiteOutcomeStore(OutcomeStore):
         """Update an existing outcome."""
         conn = self._get_connection()
 
-        # Build SET clause
+        # Build SET clause with explicit field mapping for security
+        # This prevents SQL injection by only allowing specific fields
         allowed_fields = {
             "outcome_type", "health_score_after", "time_to_healthy",
             "anomalies_detected", "required_rollback", "feedback_source",
             "human_feedback", "corrected_decision", "metadata",
         }
 
-        set_clauses = []
-        params = []
-
+        # Filter and process updates
+        processed_updates = {}
         for field, value in updates.items():
             if field not in allowed_fields:
+                logger.warning(f"Attempted to update disallowed field: {field}")
                 continue
 
-            if field == "outcome_type" and isinstance(value, OutcomeType):
-                value = value.value
-            elif field == "feedback_source" and isinstance(value, FeedbackSource):
-                value = value.value
-            elif field == "metadata" and isinstance(value, dict):
-                value = json.dumps(value)
+            # Validate and convert field values
+            if field == "outcome_type":
+                if isinstance(value, OutcomeType):
+                    value = value.value
+                elif value not in [ot.value for ot in OutcomeType]:
+                    logger.error(f"Invalid outcome_type: {value}")
+                    continue
+            elif field == "feedback_source":
+                if isinstance(value, FeedbackSource):
+                    value = value.value
+                elif value not in [fs.value for fs in FeedbackSource]:
+                    logger.error(f"Invalid feedback_source: {value}")
+                    continue
+            elif field == "metadata":
+                if isinstance(value, dict):
+                    try:
+                        value = json.dumps(value)
+                    except (TypeError, ValueError) as e:
+                        logger.error(f"Failed to serialize metadata: {e}")
+                        continue
             elif field == "required_rollback":
                 value = 1 if value else 0
 
-            set_clauses.append(f"{field} = ?")
-            params.append(value)
+            processed_updates[field] = value
 
-        if not set_clauses:
+        if not processed_updates:
+            logger.debug("No valid fields to update")
             return False
 
-        params.append(outcome_id)
+        # Build query with explicit field names (not user-controlled)
+        # This is safe because field names come from our allowed_fields set
+        set_clause = ', '.join(f"{field} = ?" for field in processed_updates.keys())
+        params = list(processed_updates.values()) + [outcome_id]
 
+        # Execute update with parameterized query
         result = conn.execute(
-            f"UPDATE outcomes SET {', '.join(set_clauses)} WHERE outcome_id = ?",
+            f"UPDATE outcomes SET {set_clause} WHERE outcome_id = ?",
             params,
         )
         conn.commit()
 
+        logger.debug(f"Updated outcome {outcome_id}, rows affected: {result.rowcount}")
         return result.rowcount > 0
 
     def _row_to_outcome(self, row: sqlite3.Row) -> ResurrectionOutcome:
