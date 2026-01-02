@@ -1,23 +1,92 @@
-🧠 Medic Agent – Repository Specification Sheet
+# Medic Agent
 
-Repository Name: medic-agent
-Parent Organization: github.com/kase1111-hash
+**Autonomous Resilience Layer for Smith Kill Events**
 
-Purpose: Autonomous resilience layer that listens to Smith kill reports, evaluates legitimacy, and manages resurrection workflows with adaptive learning.
+Medic Agent is an intelligent system that monitors kill events from Smith, evaluates their legitimacy through SIEM integration, and orchestrates resurrection workflows with adaptive learning capabilities.
 
-1. Repository Overview
-Component	Description	Phase Introduced
-core/	Core logic for message listening, SIEM querying, and decision evaluation.	Phase 0–1
-interfaces/	CLI/Web UI for human review and manual approval workflows.	Phase 2
-execution/	Resurrection, monitoring, and rollback management.	Phase 2
-learning/	Outcome logging, pattern analysis, and adaptive thresholds.	Phase 4
-integration/	Smith protocol bindings, SIEM adapters, and human override APIs.	Phase 3–5
-tests/	Unit and integration tests for each subsystem.	Continuous
-docs/	Phase documentation, quick-start guides, architecture diagrams.	Continuous
-2. System Architecture
+## Features
 
-Core Flow Diagram:
+- **Kill Report Monitoring**: Real-time subscription to Smith's kill notification feed
+- **SIEM Integration**: Contextual threat intelligence queries for informed decision-making
+- **Multi-Mode Operation**: Observer, Manual, Semi-Auto, and Full-Auto modes
+- **Risk Assessment**: Advanced risk scoring with configurable thresholds
+- **Resurrection Workflow**: Automated execution with monitoring and rollback
+- **Adaptive Learning**: Outcome tracking and threshold adjustment
+- **Smith Collaboration**: Veto protocol and negotiation support
+- **Production Ready**: Prometheus metrics, error handling, circuit breakers
 
+## Current Version
+
+**v7.0.0** - All phases implemented (Foundation through Deployment & Operations)
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.11+
+- Redis (for event bus)
+- Docker (optional, for containerized deployment)
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/kase1111-hash/medic-agent.git
+cd medic-agent
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Configuration
+
+Copy and customize the configuration files:
+
+```bash
+cp config/medic.yaml.example config/medic.yaml
+cp config/constitution.yaml.example config/constitution.yaml
+```
+
+Key configuration options in `config/medic.yaml`:
+
+```yaml
+mode:
+  current: "observer"  # observer | manual | semi_auto | full_auto
+
+smith:
+  event_bus:
+    host: "localhost"
+    port: 6379
+
+siem:
+  endpoint: "http://localhost:8080/siem"
+```
+
+### Running
+
+```bash
+# Start in observer mode (default)
+python main.py
+
+# Start in specific mode
+python main.py --mode manual
+python main.py --mode semi_auto
+python main.py --mode full_auto
+
+# Enable web interface
+python main.py --web --port 8000
+
+# Show version
+python main.py --version
+```
+
+## Architecture
+
+```
 Smith Kill Notification --> [Medic Listener]
                                  |
                                  v
@@ -36,166 +105,134 @@ Smith Kill Notification --> [Medic Listener]
                            |
                            v
                  [Outcome Logging + Learning]
+```
 
-3. Phase-Based Feature Breakdown
-🩸 Phase 0 — Foundation
+## Project Structure
 
-Goal: Get Medic listening, parsing, and logging kill reports.
-
-Module	File	Description
-Message Listener	core/listener.py	Subscribes to Smith kill feed, parses KILL_REPORT.
-SIEM Adapter	core/siem_interface.py	Queries SIEM, parses CONTEXT_RESPONSE.
-Logging	core/logger.py	Structured logging to disk and console.
-
-Integration Points:
-
-Connects to Smith’s event bus (smith.events.kill_notifications)
-
-Queries SIEM via REST or gRPC (siem/query endpoint)
-
-🧩 Phase 1 — Observer Mode
-
-Goal: Decision logic without action.
-
-Module	File	Description
-Decision Logic	core/decision.py	Implements should_resurrect()
-Decision Logging	core/log_decisions.py	Logs what Medic would have done.
-Reporting	core/reporting.py	Generates daily summaries (CSV + JSON).
-
-Artifacts:
-
-observer.log (raw decisions)
-
-reports/daily_summary.json
-
-⚙️ Phase 2 — Manual Resurrection Mode
-
-Goal: Human-approved resurrection workflow.
-
-Module	File	Description
-Recommendation Engine	execution/recommendation.py	Generates structured resurrection proposals.
-Human Interface	interfaces/cli.py or interfaces/web.py	Allows human review, approval, or denial.
-Resurrection Executor	execution/resurrector.py	Handles restore, monitor, and rollback.
-Monitoring Engine	execution/monitor.py	Observes resurrected modules for anomalies.
-
-Integration Points:
-
-CLI / Web API under /approval
-
-Uses internal event bus for state change tracking
-
-🧮 Phase 3 — Semi-Autonomous Mode
-
-Goal: Automated decisions for low-risk cases.
-
-Module	File	Description
-Risk Assessment	core/risk.py	Implements assess_risk() scoring function.
-Auto-Resurrection	execution/auto_resurrect.py	Executes low-risk revivals automatically.
-Approval Queue	interfaces/approval_queue.py	Routes medium-risk recommendations to human queue.
-
-Integration Points:
-
-Internal message broker (Redis/RabbitMQ)
-
-smith.veto pre-resurrection notice protocol (Phase 5 compatibility)
-
-🧬 Phase 4 — Learning System
-
-Goal: Self-improving decision thresholds via outcome analytics.
-
-Module	File	Description
-Outcome Database	learning/outcomes_db.py	SQLite or lightweight Postgres for outcome storage.
-Pattern Analysis	learning/analyze.py	Weekly analysis and pattern detection.
-Adaptive Thresholds	learning/thresholds.py	Adjusts decision criteria dynamically.
-
-Artifacts:
-
-outcomes.db
-
-smith_feedback_report.json
-
-🧠 Phase 5 — Full Autonomous Mode
-
-Goal: Fully autonomous, self-healing, self-evaluating system.
-
-Module	File	Description
-Edge Case Manager	integration/edge_cases.py	Handles mass kills, dependency chains.
-Smith Collaboration	integration/smith_negotiation.py	Negotiation and veto handling.
-Self-Monitoring	core/self_monitor.py	Evaluates Medic’s performance and confidence decay.
-
-Integration Points:
-
-Bi-directional API with Smith core
-
-Threat-level feedback loop to SIEM
-
-4. Repository Structure (Proposed)
+```
 medic-agent/
-├── core/
-│   ├── listener.py
-│   ├── siem_interface.py
-│   ├── decision.py
-│   ├── risk.py
-│   ├── logger.py
-│   └── self_monitor.py
-├── execution/
-│   ├── resurrector.py
-│   ├── monitor.py
-│   ├── recommendation.py
-│   └── auto_resurrect.py
-├── interfaces/
-│   ├── cli.py
-│   ├── web.py
-│   └── approval_queue.py
-├── learning/
-│   ├── outcomes_db.py
-│   ├── analyze.py
-│   └── thresholds.py
-├── integration/
-│   ├── edge_cases.py
-│   ├── smith_negotiation.py
-│   └── siem_adapters/
-├── tests/
-│   ├── test_decision.py
-│   ├── test_resurrector.py
-│   └── test_learning.py
-├── docs/
-│   ├── QUICKSTART.md
-│   ├── ARCHITECTURE.md
-│   └── API_REFERENCE.md
-└── main.py
+├── core/                    # Core logic modules
+│   ├── listener.py          # Smith event subscription
+│   ├── siem_interface.py    # SIEM query adapter
+│   ├── decision.py          # Decision engine
+│   ├── risk.py              # Risk assessment
+│   ├── errors.py            # Custom exceptions
+│   ├── metrics.py           # Prometheus metrics
+│   └── models.py            # Data models
+├── execution/               # Resurrection execution
+│   ├── resurrector.py       # Resurrection workflow
+│   ├── monitor.py           # Post-resurrection monitoring
+│   ├── recommendation.py    # Proposal generation
+│   └── auto_resurrect.py    # Auto-resurrection logic
+├── interfaces/              # User interfaces
+│   ├── cli.py               # Command-line interface
+│   ├── web.py               # REST API (FastAPI)
+│   └── approval_queue.py    # Human approval queue
+├── learning/                # Adaptive learning system
+│   ├── outcome_store.py     # Outcome database
+│   ├── pattern_analyzer.py  # Pattern detection
+│   └── threshold_adapter.py # Threshold adjustment
+├── integration/             # External integrations
+│   ├── smith_negotiator.py  # Smith collaboration
+│   ├── veto_protocol.py     # Veto handling
+│   └── edge_case_manager.py # Edge case handling
+├── config/                  # Configuration files
+│   ├── medic.yaml           # Main configuration
+│   └── constitution.yaml    # Phase toggles
+├── tests/                   # Test suite
+├── kubernetes/              # K8s manifests
+├── deploy/                  # Deployment configs
+└── main.py                  # Application entry point
+```
 
-5. Technology Stack
-Component	Tech
-Language	Python 3.11+
-Database	SQLite (upgrade path: PostgreSQL)
-APIs	FastAPI or Flask
-Message Broker	Redis Streams (optional)
-Testing	Pytest
-Logging	Python logging + JSON structured logs
-Learning	Pandas + Scikit-learn (for pattern detection, Phase 4+)
-6. Integration Roadmap (Weeks 1–9)
-Week	Milestone	Deliverables
-1	Phase 0 – Foundation	Listener + SIEM adapter + basic logging
-2	Phase 1 – Observer Mode	Decision logic + daily summaries
-3–4	Phase 2 – Manual Mode	CLI approval + resurrection + monitoring
-5–6	Phase 3 – Semi-Auto	Auto resurrection + risk assessment
-7–8	Phase 4 – Learning	Outcome tracking + adaptive thresholds
-9+	Phase 5 – Full Auto	Smith negotiation + self-monitoring
-7. Success Metrics
-Stage	KPI	Target
-MVP (Week 4)	Human-approved resurrections	≥5 successful
-Semi-Auto (Week 6)	Auto-resurrection success rate	≥80%
-Full Auto (Week 9)	Self-healing performance	≥85% sustained
-Learning Phase	Improvement in false-positive detection	≥25%
-8. Deliverables
+## Operating Modes
 
-README.md — Overview and usage instructions
+| Mode | Description | Human Review |
+|------|-------------|--------------|
+| **Observer** | Log decisions without action | N/A |
+| **Manual** | All resurrections require approval | Required |
+| **Semi-Auto** | Auto-approve low-risk only | Medium/High risk |
+| **Full-Auto** | Fully autonomous operation | Critical only |
 
-docs/ARCHITECTURE.md — Internal architecture and decision flow diagrams
+## API Endpoints
 
-medic_agent.py — Entry point for all runtime phases
+When running with `--web`, the following endpoints are available:
 
-Unit & Integration Tests — Minimum 80% coverage target
+- `GET /health` - Health check
+- `GET /status` - System status
+- `GET /api/v1/queue` - Pending approvals
+- `POST /api/v1/queue/{id}/approve` - Approve resurrection
+- `POST /api/v1/queue/{id}/deny` - Deny resurrection
+- `GET /api/v1/decisions` - List decisions
+- `GET /api/v1/resurrections` - List resurrections
+- `GET /api/v1/metrics` - Prometheus metrics
 
-Configurable constitution.yaml — Phase feature toggles for controlled rollout
+## Docker Deployment
+
+```bash
+# Build image
+docker build -t medic-agent:latest .
+
+# Run with Docker Compose
+docker-compose up -d
+
+# View logs
+docker-compose logs -f medic-agent
+```
+
+## Kubernetes Deployment
+
+```bash
+# Apply manifests
+kubectl apply -k kubernetes/
+
+# Check status
+kubectl -n medic-agent get pods
+```
+
+## Testing
+
+```bash
+# Run all tests
+pytest tests/ -v
+
+# Run with coverage
+pytest tests/ --cov=. --cov-report=html
+
+# Run specific test category
+pytest tests/unit/ -v
+pytest tests/integration/ -v
+```
+
+## Phase Implementation Status
+
+| Phase | Name | Status |
+|-------|------|--------|
+| 0 | Foundation | Complete |
+| 1 | Observer Mode | Complete |
+| 2 | Manual Mode | Complete |
+| 3 | Semi-Autonomous | Complete |
+| 4 | Learning System | Complete |
+| 5 | Full Autonomous | Complete |
+| 6 | Production Readiness | Complete |
+| 7 | Deployment & Operations | Complete |
+
+## Configuration Reference
+
+See [docs/SPEC_SHEET.md](docs/SPEC_SHEET.md) for detailed configuration options and API specifications.
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is proprietary software.
+
+## Support
+
+For issues and feature requests, please use the GitHub issue tracker.

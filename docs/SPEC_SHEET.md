@@ -1457,8 +1457,210 @@ MEDIC_METRICS_PORT=9090
 3. Learning system
 4. Smith negotiation protocol
 
+### Phase 6 (Production Readiness)
+1. `core/errors.py` - Custom exception hierarchy
+2. `core/metrics.py` - Prometheus metrics exporter
+3. `interfaces/web.py` - Complete REST API
+4. Test fixtures and comprehensive test suite
+
+### Phase 7 (Deployment & Operations)
+1. `Dockerfile` - Multi-stage container build
+2. `docker-compose.yaml` - Local development environment
+3. `kubernetes/` - Production K8s manifests
+4. `.github/workflows/ci.yaml` - CI/CD pipeline
+
 ---
 
-*Document Version: 1.0*
-*Last Updated: 2024-01-15*
+## 15. Phase 6 - Production Readiness
+
+### 15.1 Error Handling (`core/errors.py`)
+
+```python
+class MedicError(Exception):
+    """Base exception for Medic Agent."""
+    def __init__(self, message: str, category: ErrorCategory, recoverable: bool = True):
+        self.message = message
+        self.category = category
+        self.recoverable = recoverable
+
+class SmithConnectionError(MedicError):
+    """Failed to connect to Smith event bus."""
+
+class SIEMQueryError(MedicError):
+    """SIEM query failed."""
+
+class DecisionError(MedicError):
+    """Decision engine failure."""
+
+class ResurrectionError(MedicError):
+    """Resurrection workflow failure."""
+
+class ValidationError(MedicError):
+    """Data validation failure."""
+
+class ConfigurationError(MedicError):
+    """Configuration error."""
+```
+
+### 15.2 Metrics (`core/metrics.py`)
+
+Prometheus metrics for observability:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `medic_kills_received_total` | Counter | Kill reports received |
+| `medic_decisions_total` | Counter | Decisions made (by outcome) |
+| `medic_resurrections_total` | Counter | Resurrections attempted |
+| `medic_resurrection_duration_seconds` | Histogram | Resurrection duration |
+| `medic_errors_total` | Counter | Errors by category |
+| `medic_queue_size` | Gauge | Approval queue size |
+| `medic_active_resurrections` | Gauge | In-progress resurrections |
+
+### 15.3 Circuit Breaker Pattern
+
+```python
+@dataclass
+class CircuitBreaker:
+    name: str
+    failure_threshold: int = 5
+    recovery_timeout_seconds: int = 60
+    half_open_max_calls: int = 3
+    state: CircuitState = CircuitState.CLOSED
+```
+
+States: `CLOSED` -> `OPEN` -> `HALF_OPEN` -> `CLOSED`
+
+### 15.4 Retry Policy
+
+```python
+@dataclass
+class RetryPolicy:
+    max_attempts: int = 3
+    initial_delay_seconds: float = 1.0
+    max_delay_seconds: float = 30.0
+    exponential_base: float = 2.0
+    jitter: bool = True
+```
+
+---
+
+## 16. Phase 7 - Deployment & Operations
+
+### 16.1 Docker Configuration
+
+**Multi-stage Dockerfile:**
+
+```dockerfile
+# Builder stage
+FROM python:3.11-slim as builder
+WORKDIR /build
+COPY requirements.txt .
+RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
+
+# Production stage
+FROM python:3.11-slim as production
+WORKDIR /app
+COPY --from=builder /wheels /wheels
+RUN pip install --no-cache-dir /wheels/*
+COPY . .
+EXPOSE 8000 9090
+HEALTHCHECK --interval=30s --timeout=10s CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+ENTRYPOINT ["python", "main.py"]
+```
+
+### 16.2 Docker Compose (Local Development)
+
+Services:
+- `medic-agent` - Main application
+- `redis` - Event bus / caching
+- `siem-mock` - Mock SIEM service
+- `prometheus` - Metrics collection
+- `grafana` - Metrics visualization
+
+```bash
+docker-compose up -d
+docker-compose logs -f medic-agent
+```
+
+### 16.3 Kubernetes Manifests
+
+**Resources:**
+
+| Resource | Description |
+|----------|-------------|
+| `namespace.yaml` | `medic-agent` namespace |
+| `configmap.yaml` | Application configuration |
+| `secret.yaml` | Sensitive credentials |
+| `deployment.yaml` | 2-replica deployment |
+| `service.yaml` | ClusterIP service |
+| `kustomization.yaml` | Kustomize configuration |
+
+**Deployment Features:**
+- Rolling update strategy (1 max unavailable)
+- Liveness/readiness probes
+- Resource limits (256Mi-512Mi memory)
+- Pod anti-affinity for HA
+- HorizontalPodAutoscaler (2-10 replicas)
+- PodDisruptionBudget (minAvailable: 1)
+
+```bash
+kubectl apply -k kubernetes/
+kubectl -n medic-agent get pods
+kubectl -n medic-agent logs -f deployment/medic-agent
+```
+
+### 16.4 CI/CD Pipeline (`.github/workflows/ci.yaml`)
+
+**Jobs:**
+
+| Job | Trigger | Description |
+|-----|---------|-------------|
+| `lint` | Push/PR | Ruff + Black + Mypy |
+| `test` | Push/PR | Unit tests |
+| `integration-test` | Push/PR | Integration tests |
+| `build` | Main branch | Docker image build |
+| `security-scan` | Main branch | Trivy security scan |
+| `deploy-staging` | Main branch | Deploy to staging |
+| `deploy-production` | Tag | Deploy to production |
+
+**Container Registry:** GitHub Container Registry (ghcr.io)
+
+### 16.5 Monitoring Stack
+
+**Prometheus Configuration:**
+
+```yaml
+scrape_configs:
+  - job_name: 'medic-agent'
+    static_configs:
+      - targets: ['medic-agent:9090']
+    scrape_interval: 15s
+```
+
+**Grafana Dashboards:**
+- Resurrection success rate
+- Decision latency
+- Error rates by category
+- Queue depth
+- Resource utilization
+
+---
+
+## 17. Implementation Status
+
+| Phase | Name | Status | Version |
+|-------|------|--------|---------|
+| 0 | Foundation | Complete | v1.0 |
+| 1 | Observer Mode | Complete | v1.0 |
+| 2 | Manual Mode | Complete | v2.0 |
+| 3 | Semi-Autonomous | Complete | v3.0 |
+| 4 | Learning System | Complete | v4.0 |
+| 5 | Full Autonomous | Complete | v5.0 |
+| 6 | Production Readiness | Complete | v6.0 |
+| 7 | Deployment & Operations | Complete | v7.0 |
+
+---
+
+*Document Version: 2.0*
+*Last Updated: 2026-01-02*
 *Maintainer: Medic Agent Development Team*
