@@ -383,104 +383,217 @@ class WebAPI:
             @app.get("/api/v1/queue/{item_id}", tags=["Queue"], dependencies=[Depends(require_permission(Permission.VIEW_QUEUE))])
             async def get_queue_item(item_id: str = Path(..., description="Queue item ID")):
                 """Get a specific queue item. Requires VIEW_QUEUE permission."""
-            item = await self.queue.get_item(item_id)
-            if not item:
-                raise HTTPException(status_code=404, detail="Item not found")
-            return self._wrap_response(item.to_dict())
+                item = await self.queue.get_item(item_id)
+                if not item:
+                    raise HTTPException(status_code=404, detail="Item not found")
+                return self._wrap_response(item.to_dict())
 
-        @app.post("/api/v1/queue/{item_id}/approve", tags=["Queue"])
-        async def approve_item(
-            item_id: str = Path(..., description="Queue item ID"),
-            request: ApprovalRequest = Body(...),
-        ):
-            """Approve a resurrection proposal."""
-            try:
-                resurrection_request = await self.queue.approve(
-                    item_id,
-                    request.approver,
-                    request.notes,
-                )
+            @app.post("/api/v1/queue/{item_id}/approve", tags=["Queue"], dependencies=[Depends(require_permission(Permission.APPROVE_RESURRECTION))])
+            async def approve_item(
+                item_id: str = Path(..., description="Queue item ID"),
+                request: ApprovalRequest = Body(...),
+            ):
+                """Approve a resurrection proposal. Requires APPROVE_RESURRECTION permission."""
+                try:
+                    resurrection_request = await self.queue.approve(
+                        item_id,
+                        request.approver,
+                        request.notes,
+                    )
 
-                result = {
-                    "status": "approved",
-                    "request_id": resurrection_request.request_id,
-                    "approved_by": request.approver,
-                    "approved_at": datetime.utcnow().isoformat(),
-                }
+                    result = {
+                        "status": "approved",
+                        "request_id": resurrection_request.request_id,
+                        "approved_by": request.approver,
+                        "approved_at": datetime.utcnow().isoformat(),
+                    }
 
-                # Execute resurrection if resurrector is available
-                if self.resurrector:
-                    res_result = await self.resurrector.resurrect(resurrection_request)
-                    result["resurrection"] = res_result.to_dict()
+                    # Execute resurrection if resurrector is available
+                    if self.resurrector:
+                        res_result = await self.resurrector.resurrect(resurrection_request)
+                        result["resurrection"] = res_result.to_dict()
 
-                    # Start monitoring if available and resurrection succeeded
-                    if self.monitor and res_result.success:
-                        monitor_id = await self.monitor.start_monitoring(
-                            resurrection_request,
-                            duration_minutes=30,
-                        )
-                        result["monitor_id"] = monitor_id
+                        # Start monitoring if available and resurrection succeeded
+                        if self.monitor and res_result.success:
+                            monitor_id = await self.monitor.start_monitoring(
+                                resurrection_request,
+                                duration_minutes=30,
+                            )
+                            result["monitor_id"] = monitor_id
 
-                return self._wrap_response(result)
+                    return self._wrap_response(result)
 
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
 
-        @app.post("/api/v1/queue/{item_id}/deny", tags=["Queue"])
-        async def deny_item(
-            item_id: str = Path(..., description="Queue item ID"),
-            request: DenialRequest = Body(...),
-        ):
-            """Deny a resurrection proposal."""
-            try:
-                await self.queue.deny(item_id, request.denier, request.reason)
+            @app.post("/api/v1/queue/{item_id}/deny", tags=["Queue"], dependencies=[Depends(require_permission(Permission.DENY_RESURRECTION))])
+            async def deny_item(
+                item_id: str = Path(..., description="Queue item ID"),
+                request: DenialRequest = Body(...),
+            ):
+                """Deny a resurrection proposal. Requires DENY_RESURRECTION permission."""
+                try:
+                    await self.queue.deny(item_id, request.denier, request.reason)
+                    return self._wrap_response({
+                        "status": "denied",
+                        "denied_by": request.denier,
+                        "reason": request.reason,
+                        "denied_at": datetime.utcnow().isoformat(),
+                    })
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+        else:
+            # No auth mode - only for development
+            @app.get("/api/v1/queue", tags=["Queue"])
+            async def list_queue(
+                limit: int = Query(50, ge=1, le=100, description="Maximum items to return"),
+                status_filter: Optional[str] = Query(None, description="Filter by status"),
+            ):
+                """List items in the approval queue. ⚠️  NO AUTHENTICATION."""
+                items = await self.queue.list_pending(limit=limit)
                 return self._wrap_response({
-                    "status": "denied",
-                    "denied_by": request.denier,
-                    "reason": request.reason,
-                    "denied_at": datetime.utcnow().isoformat(),
+                    "items": [item.to_dict() for item in items],
+                    "count": len(items),
+                    "warning": "API running without authentication",
                 })
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
+
+            @app.get("/api/v1/queue/{item_id}", tags=["Queue"])
+            async def get_queue_item(item_id: str = Path(..., description="Queue item ID")):
+                """Get a specific queue item. ⚠️  NO AUTHENTICATION."""
+                item = await self.queue.get_item(item_id)
+                if not item:
+                    raise HTTPException(status_code=404, detail="Item not found")
+                return self._wrap_response(item.to_dict())
+
+            @app.post("/api/v1/queue/{item_id}/approve", tags=["Queue"])
+            async def approve_item(
+                item_id: str = Path(..., description="Queue item ID"),
+                request: ApprovalRequest = Body(...),
+            ):
+                """Approve a resurrection proposal. ⚠️  NO AUTHENTICATION."""
+                try:
+                    resurrection_request = await self.queue.approve(
+                        item_id,
+                        request.approver,
+                        request.notes,
+                    )
+
+                    result = {
+                        "status": "approved",
+                        "request_id": resurrection_request.request_id,
+                        "approved_by": request.approver,
+                        "approved_at": datetime.utcnow().isoformat(),
+                    }
+
+                    if self.resurrector:
+                        res_result = await self.resurrector.resurrect(resurrection_request)
+                        result["resurrection"] = res_result.to_dict()
+
+                        if self.monitor and res_result.success:
+                            monitor_id = await self.monitor.start_monitoring(
+                                resurrection_request,
+                                duration_minutes=30,
+                            )
+                            result["monitor_id"] = monitor_id
+
+                    return self._wrap_response(result)
+
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+
+            @app.post("/api/v1/queue/{item_id}/deny", tags=["Queue"])
+            async def deny_item(
+                item_id: str = Path(..., description="Queue item ID"),
+                request: DenialRequest = Body(...),
+            ):
+                """Deny a resurrection proposal. ⚠️  NO AUTHENTICATION."""
+                try:
+                    await self.queue.deny(item_id, request.denier, request.reason)
+                    return self._wrap_response({
+                        "status": "denied",
+                        "denied_by": request.denier,
+                        "reason": request.reason,
+                        "denied_at": datetime.utcnow().isoformat(),
+                    })
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
 
         # ==================== Decisions Endpoints ====================
 
-        @app.get("/api/v1/decisions", tags=["Decisions"])
-        async def list_decisions(
-            limit: int = Query(50, ge=1, le=100),
-            offset: int = Query(0, ge=0),
-            outcome: Optional[str] = Query(None, description="Filter by outcome"),
-        ):
-            """List recent resurrection decisions."""
-            if not self.decision_logger:
-                return self._wrap_response({"decisions": [], "count": 0, "total": 0})
+        if AUTH_AVAILABLE:
+            @app.get("/api/v1/decisions", tags=["Decisions"], dependencies=[Depends(require_permission(Permission.VIEW_DECISIONS))])
+            async def list_decisions(
+                limit: int = Query(50, ge=1, le=100),
+                offset: int = Query(0, ge=0),
+                outcome: Optional[str] = Query(None, description="Filter by outcome"),
+            ):
+                """List recent resurrection decisions. Requires VIEW_DECISIONS permission."""
+                if not self.decision_logger:
+                    return self._wrap_response({"decisions": [], "count": 0, "total": 0})
 
-            try:
-                decisions = self.decision_logger.get_recent_decisions(limit=limit)
-                if outcome:
-                    decisions = [d for d in decisions if d.outcome.value == outcome]
+                try:
+                    decisions = self.decision_logger.get_recent_decisions(limit=limit)
+                    if outcome:
+                        decisions = [d for d in decisions if d.outcome.value == outcome]
 
-                return self._wrap_response({
-                    "decisions": [d.to_dict() for d in decisions],
-                    "count": len(decisions),
-                    "limit": limit,
-                    "offset": offset,
-                })
-            except Exception as e:
-                logger.error(f"Error listing decisions: {e}")
-                return self._wrap_response({"decisions": [], "count": 0}, errors=[str(e)])
+                    return self._wrap_response({
+                        "decisions": [d.to_dict() for d in decisions],
+                        "count": len(decisions),
+                        "limit": limit,
+                        "offset": offset,
+                    })
+                except Exception as e:
+                    logger.error(f"Error listing decisions: {e}")
+                    return self._wrap_response({"decisions": [], "count": 0}, errors=[str(e)])
 
-        @app.get("/api/v1/decisions/{decision_id}", tags=["Decisions"])
-        async def get_decision(decision_id: str = Path(..., description="Decision ID")):
-            """Get a specific decision."""
-            if not self.decision_logger:
-                raise HTTPException(status_code=404, detail="Decision logger not available")
+            @app.get("/api/v1/decisions/{decision_id}", tags=["Decisions"], dependencies=[Depends(require_permission(Permission.VIEW_DECISIONS))])
+            async def get_decision(decision_id: str = Path(..., description="Decision ID")):
+                """Get a specific decision. Requires VIEW_DECISIONS permission."""
+                if not self.decision_logger:
+                    raise HTTPException(status_code=404, detail="Decision logger not available")
 
-            decision = self.decision_logger.get_decision(decision_id)
-            if not decision:
-                raise HTTPException(status_code=404, detail="Decision not found")
+                decision = self.decision_logger.get_decision(decision_id)
+                if not decision:
+                    raise HTTPException(status_code=404, detail="Decision not found")
 
-            return self._wrap_response(decision.to_dict())
+                return self._wrap_response(decision.to_dict())
+        else:
+            @app.get("/api/v1/decisions", tags=["Decisions"])
+            async def list_decisions(
+                limit: int = Query(50, ge=1, le=100),
+                offset: int = Query(0, ge=0),
+                outcome: Optional[str] = Query(None, description="Filter by outcome"),
+            ):
+                """List recent resurrection decisions. ⚠️  NO AUTHENTICATION."""
+                if not self.decision_logger:
+                    return self._wrap_response({"decisions": [], "count": 0, "total": 0})
+
+                try:
+                    decisions = self.decision_logger.get_recent_decisions(limit=limit)
+                    if outcome:
+                        decisions = [d for d in decisions if d.outcome.value == outcome]
+
+                    return self._wrap_response({
+                        "decisions": [d.to_dict() for d in decisions],
+                        "count": len(decisions),
+                        "limit": limit,
+                        "offset": offset,
+                    })
+                except Exception as e:
+                    logger.error(f"Error listing decisions: {e}")
+                    return self._wrap_response({"decisions": [], "count": 0}, errors=[str(e)])
+
+            @app.get("/api/v1/decisions/{decision_id}", tags=["Decisions"])
+            async def get_decision(decision_id: str = Path(..., description="Decision ID")):
+                """Get a specific decision. ⚠️  NO AUTHENTICATION."""
+                if not self.decision_logger:
+                    raise HTTPException(status_code=404, detail="Decision logger not available")
+
+                decision = self.decision_logger.get_decision(decision_id)
+                if not decision:
+                    raise HTTPException(status_code=404, detail="Decision not found")
+
+                return self._wrap_response(decision.to_dict())
 
         # ==================== Resurrections Endpoints ====================
 
