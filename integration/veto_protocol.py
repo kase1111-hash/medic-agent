@@ -185,7 +185,7 @@ class VetoProtocol:
         logger.info(
             "Veto request received",
             request_id=request.request_id,
-            module=request.module,
+            target_module=request.module,
             kill_reason=request.kill_reason.value,
         )
 

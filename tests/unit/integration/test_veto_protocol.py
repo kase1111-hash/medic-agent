@@ -627,8 +627,11 @@ class TestVetoDecisionLogic:
         """Test that single veto reason triggers delay."""
         protocol = protocol_with_mocks
 
-        # Clear FP history to have only one reason
-        protocol.outcome_store.get_outcomes_by_module.return_value = []
+        # Set FP history to exactly min_fp_history_for_veto (3) - one veto reason
+        mock_outcome = MagicMock()
+        mock_outcome.outcome_type.value = "false_positive"
+        mock_outcome.timestamp = datetime.utcnow()
+        protocol.outcome_store.get_outcomes_by_module.return_value = [mock_outcome] * 3
 
         now = datetime.utcnow()
         request = VetoRequest(
@@ -637,18 +640,19 @@ class TestVetoDecisionLogic:
             instance_id="instance-001",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
             severity=Severity.LOW,
-            smith_confidence=0.2,  # Very low confidence
+            smith_confidence=0.85,  # High confidence - no low risk reason
             evidence=["Uncertain behavior"],
-            dependencies=[],
+            dependencies=[],  # No critical dependency reason
             received_at=now,
             deadline=now + timedelta(seconds=30),
         )
 
         response = await protocol.handle_veto_request(request)
 
-        # Single reason should trigger delay
+        # Single veto reason (FP history) should trigger delay
         assert response.decision == VetoDecision.DELAY
         assert response.delay_seconds is not None
+        assert VetoReason.HIGH_FALSE_POSITIVE_HISTORY in response.veto_reasons
 
     @pytest.mark.asyncio
     async def test_conditional_approval(self):

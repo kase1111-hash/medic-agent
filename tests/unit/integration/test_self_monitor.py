@@ -450,6 +450,15 @@ class TestSelfMonitor:
         mock_process.return_value = mock_proc
         mock_cpu.return_value = 30.0
 
+        # Register mock connected components
+        mock_listener = Mock()
+        mock_listener.is_connected.return_value = True
+        monitor.register_component("listener", mock_listener)
+
+        mock_siem = AsyncMock()
+        mock_siem.is_healthy.return_value = True
+        monitor.register_component("siem_adapter", mock_siem)
+
         # Add some latency data
         monitor.record_decision_latency(150.0)
 
@@ -595,6 +604,15 @@ class TestSelfMonitor:
         mock_proc.memory_percent.return_value = 50.0
         mock_process.return_value = mock_proc
         mock_cpu.return_value = 30.0
+
+        # Register mock connected components
+        mock_listener = Mock()
+        mock_listener.is_connected.return_value = True
+        monitor.register_component("listener", mock_listener)
+
+        mock_siem = AsyncMock()
+        mock_siem.is_healthy.return_value = True
+        monitor.register_component("siem_adapter", mock_siem)
 
         await monitor.perform_health_check()
 

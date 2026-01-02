@@ -216,13 +216,23 @@ class TestEdgeCaseManager:
         assert result.severity == EdgeCaseSeverity.CRITICAL
 
     @pytest.mark.asyncio
-    async def test_detect_system_wide_anomaly(self, manager_with_low_thresholds):
+    async def test_detect_system_wide_anomaly(self):
         """Test detection of system-wide anomaly."""
-        manager = manager_with_low_thresholds
+        # Use config with high cascade threshold to avoid triggering cascade first
+        config = EdgeCaseConfig(
+            cascade_threshold=100,  # High threshold to avoid cascade detection
+            cascade_window_seconds=300,
+            system_anomaly_module_threshold=3,
+            system_anomaly_window_seconds=300,
+        )
+        manager = EdgeCaseManager(config=config)
 
-        # Kill many different modules
+        # Kill many different modules with non-cascade reason
         for i in range(5):
-            report = self.create_kill_report(module=f"service-{i}")
+            report = self.create_kill_report(
+                module=f"service-{i}",
+                kill_reason=KillReason.ANOMALY_BEHAVIOR,  # Not CASCADE
+            )
             result = await manager.process_kill_report(report)
 
         assert result is not None
