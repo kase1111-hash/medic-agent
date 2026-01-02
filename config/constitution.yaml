@@ -1,0 +1,102 @@
+# Medic Agent Constitution
+# Phase feature toggles for controlled rollout
+#
+# This file defines which features are enabled at each phase
+# and safety constraints that apply across all phases.
+
+version: "1.0"
+
+phases:
+  phase_0_foundation:
+    enabled: true
+    description: "Foundation - listening, parsing, logging"
+    features:
+      kill_listener: true
+      siem_query: true
+      structured_logging: true
+
+  phase_1_observer:
+    enabled: true
+    description: "Observer Mode - decision logic without action"
+    features:
+      decision_logic: true
+      decision_logging: true
+      daily_reports: true
+
+  phase_2_manual:
+    enabled: false
+    description: "Manual Mode - human-approved resurrections"
+    features:
+      recommendation_engine: true
+      human_interface: true
+      resurrection_executor: true
+      post_resurrection_monitor: true
+
+  phase_3_semi_auto:
+    enabled: false
+    description: "Semi-Autonomous - auto-approve low-risk cases"
+    features:
+      risk_assessment: true
+      auto_resurrection: true
+      approval_queue: true
+
+  phase_4_learning:
+    enabled: false
+    description: "Learning System - outcome tracking and adaptation"
+    features:
+      outcome_database: true
+      pattern_analysis: true
+      adaptive_thresholds: true
+
+  phase_5_full_auto:
+    enabled: false
+    description: "Full Autonomous - self-healing with Smith collaboration"
+    features:
+      edge_case_manager: true
+      smith_negotiation: true
+      self_monitoring: true
+
+# Safety constraints applied across all phases
+constraints:
+  # Maximum auto-resurrections per hour (Phase 3+)
+  max_auto_resurrections_per_hour: 10
+
+  # Always require human review for critical-severity kills
+  require_human_review_for_critical: true
+
+  # Modules that should never be auto-resurrected
+  blacklisted_modules: []
+
+  # Modules that always require human approval regardless of risk
+  always_require_approval:
+    - "auth-service"
+    - "payment-processor"
+    - "data-pipeline"
+    - "secrets-manager"
+
+  # Minimum confidence required for any resurrection
+  min_resurrection_confidence: 0.6
+
+  # Maximum risk score for auto-resurrection
+  max_auto_resurrect_risk: 0.4
+
+  # Cooldown period between resurrections of the same module (seconds)
+  resurrection_cooldown_seconds: 300
+
+# Escalation rules
+escalation:
+  # Escalate if module is killed more than N times in an hour
+  repeated_kill_threshold: 3
+  repeated_kill_window_minutes: 60
+
+  # Escalate if resurrection fails
+  on_resurrection_failure: true
+
+  # Notification channels
+  notify:
+    - type: "log"
+      level: "warning"
+    # - type: "slack"
+    #   channel: "#medic-alerts"
+    # - type: "pagerduty"
+    #   service_key_env: "PAGERDUTY_KEY"
