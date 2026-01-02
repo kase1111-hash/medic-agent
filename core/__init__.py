@@ -35,6 +35,30 @@ from core.event_bus import (
     create_event_bus,
     on_event,
 )
+from core.errors import (
+    MedicError,
+    ErrorCategory,
+    SmithConnectionError,
+    SIEMQueryError,
+    DecisionError,
+    ResurrectionError,
+    ValidationError,
+    ConfigurationError,
+    RetryPolicy,
+    CircuitBreaker,
+    CircuitState,
+    with_retry,
+    create_siem_retry_policy,
+    create_smith_retry_policy,
+    create_siem_circuit_breaker,
+    create_smith_circuit_breaker,
+)
+from core.metrics import (
+    MedicMetrics,
+    MetricType,
+    create_metrics,
+    get_metrics,
+)
 
 __all__ = [
     # Models

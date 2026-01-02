@@ -70,6 +70,14 @@ from integration.self_monitor import (
     create_self_monitor, SelfMonitor, HealthStatus
 )
 
+# Phase 6 imports (Production Readiness)
+from core.metrics import create_metrics, MedicMetrics
+from core.errors import (
+    MedicError, SmithConnectionError, SIEMQueryError,
+    create_siem_circuit_breaker, create_smith_circuit_breaker,
+    CircuitBreaker,
+)
+
 logger = get_logger("main")
 
 
@@ -115,6 +123,11 @@ class MedicAgent:
         self.smith_negotiator: Optional[SmithNegotiator] = None
         self.veto_protocol: Optional[VetoProtocol] = None
         self.self_monitor: Optional[SelfMonitor] = None
+
+        # Phase 6 components (Production Readiness)
+        self.metrics: Optional[MedicMetrics] = None
+        self.siem_circuit_breaker: Optional[CircuitBreaker] = None
+        self.smith_circuit_breaker: Optional[CircuitBreaker] = None
 
         # Runtime state
         self._running = False
@@ -238,6 +251,29 @@ class MedicAgent:
                 await self.self_monitor.start()
 
             logger.info("Phase 5 full autonomous components initialized")
+
+        # Create Phase 6 components (Production Readiness)
+        metrics_config = self.config.get("metrics", {})
+        if metrics_config.get("enabled", True):
+            self.metrics = create_metrics(metrics_config)
+            self.metrics.set_agent_info(
+                version="6.0.0",
+                mode=self.mode,
+                phase="6",
+            )
+
+            # Start metrics server if configured
+            metrics_port = metrics_config.get("port", 9090)
+            try:
+                self.metrics.start_server(port=metrics_port)
+            except Exception as e:
+                logger.warning(f"Could not start metrics server: {e}")
+
+        # Create circuit breakers for resilience
+        self.siem_circuit_breaker = create_siem_circuit_breaker()
+        self.smith_circuit_breaker = create_smith_circuit_breaker()
+
+        logger.info("Phase 6 production components initialized")
 
         logger.info("All components initialized")
 
@@ -961,7 +997,7 @@ def main() -> int:
         "--version",
         "-v",
         action="version",
-        version="Medic Agent v5.0.0 (Phase 5 - Full Autonomous)",
+        version="Medic Agent v6.0.0 (Phase 6 - Production Ready)",
     )
 
     args = parser.parse_args()
