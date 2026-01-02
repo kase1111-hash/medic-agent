@@ -2,6 +2,13 @@
 # Phase 7: Deployment & Operations
 #
 # Local development and testing environment
+#
+# SECURITY: Before running, create a .env file with required secrets:
+#   cp .env.example .env
+#   # Edit .env and set secure values for:
+#   #   - SIEM_API_KEY
+#   #   - GRAFANA_PASSWORD
+#   #   - REDIS_PASSWORD (if using Redis auth)
 
 version: '3.8'
 
@@ -25,7 +32,8 @@ services:
       - MEDIC_LOG_LEVEL=INFO
       - SMITH_EVENT_BUS_URL=redis://redis:6379
       - SIEM_ENDPOINT=http://siem-mock:8080/siem
-      - SIEM_API_KEY=${SIEM_API_KEY:-dev-api-key}
+      # SECURITY: SIEM_API_KEY must be set in .env file or environment
+      - SIEM_API_KEY=${SIEM_API_KEY:?SIEM_API_KEY must be set in .env file}
     volumes:
       - ./config:/app/config:ro
       - ./data:/app/data
@@ -109,9 +117,12 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      # SECURITY: GRAFANA_PASSWORD must be set - no default allowed
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?GRAFANA_PASSWORD must be set in .env file}
       - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION=false
     volumes:
       - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana-data:/var/lib/grafana

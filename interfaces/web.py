@@ -10,10 +10,40 @@ Phase 6: Production Readiness - Complete REST API implementation.
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from collections import defaultdict
+import time
 
 from core.logger import get_logger
 
 logger = get_logger("interfaces.web")
+
+
+class RateLimiter:
+    """Simple in-memory rate limiter for API endpoints."""
+
+    def __init__(self, requests_per_minute: int = 60):
+        self.requests_per_minute = requests_per_minute
+        self.requests: Dict[str, List[float]] = defaultdict(list)
+
+    def is_allowed(self, client_id: str) -> bool:
+        """Check if a request from client_id is allowed."""
+        now = time.time()
+        minute_ago = now - 60
+
+        # Clean old requests
+        self.requests[client_id] = [
+            ts for ts in self.requests[client_id] if ts > minute_ago
+        ]
+
+        if len(self.requests[client_id]) >= self.requests_per_minute:
+            return False
+
+        self.requests[client_id].append(now)
+        return True
+
+
+# Global rate limiter instance
+_rate_limiter = RateLimiter(requests_per_minute=120)
 
 # Try to import FastAPI, but don't fail if not installed
 try:
@@ -112,18 +142,23 @@ class WebAPI:
         self.app = FastAPI(
             title="Medic Agent API",
             description="REST API for resurrection approval workflows and system management",
-            version="6.0.0",
+            version="7.0.0",
             docs_url="/docs",
             redoc_url="/redoc",
         )
 
         # Add CORS middleware
+        # SECURITY: In production, configure specific origins via cors_origins config
+        cors_origins = self.config.get("cors_origins", [])
+        if not cors_origins:
+            # Default to restrictive policy - only same-origin requests allowed
+            cors_origins = []
         self.app.add_middleware(
             CORSMiddleware,
-            allow_origins=self.config.get("cors_origins", ["*"]),
+            allow_origins=cors_origins,
             allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
+            allow_methods=["GET", "POST", "PUT", "DELETE"],
+            allow_headers=["Authorization", "Content-Type"],
         )
 
         self._setup_routes()
@@ -135,7 +170,7 @@ class WebAPI:
             "data": data,
             "meta": {
                 "timestamp": datetime.utcnow().isoformat(),
-                "version": "6.0.0",
+                "version": "7.0.0",
             },
             "errors": errors or [],
         }

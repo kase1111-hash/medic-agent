@@ -74,10 +74,18 @@ data:
         anomaly_threshold: 0.7
 
     interfaces:
+      cli:
+        enabled: false
       web:
         enabled: true
         port: 8000
         host: "0.0.0.0"
+        # CORS Origins - Configure for your domains
+        # IMPORTANT: Update these URLs for your production environment
+        cors_origins:
+          - "https://medic-dashboard.example.com"
+          - "https://admin.example.com"
+        rate_limit_per_minute: 120
       approval_queue:
         max_pending: 100
         timeout_hours: 24

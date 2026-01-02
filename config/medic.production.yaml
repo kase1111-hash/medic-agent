@@ -1,22 +1,22 @@
-# Medic Agent Configuration
-# Version 1.0
+# Medic Agent Configuration - PRODUCTION
+# Phase 7: Deployment & Operations
+#
+# This is a production-ready configuration template.
+# Copy this to medic.yaml and customize for your environment.
 
 version: "1.0"
 
-# Operating mode
-# - observer: Log decisions but don't act (Phase 1)
-# - manual: Require human approval for all resurrections (Phase 2)
-# - semi_auto: Auto-approve low-risk, queue medium-risk (Phase 3)
-# - full_auto: Fully autonomous operation (Phase 5)
+# Operating mode - semi_auto recommended for production
 mode:
-  current: "observer"
+  current: "semi_auto"
   fallback: "observer"
 
 # Smith connection settings
 smith:
   event_bus:
-    type: "redis"  # redis | rabbitmq | kafka | mock
-    host: "localhost"
+    type: "redis"
+    # Use Kubernetes DNS for service discovery
+    host: "redis.redis.svc.cluster.local"
     port: 6379
     topic: "smith.events.kill_notifications"
     response_topic: "medic.responses"
@@ -37,10 +37,12 @@ smith:
 
 # SIEM integration
 siem:
-  adapter: "rest"  # rest | grpc | mock
-  endpoint: "http://localhost:8080/siem"
+  adapter: "rest"
+  # Use Kubernetes DNS for SIEM service
+  endpoint: "http://siem.security.svc.cluster.local:8080/siem"
   auth:
     type: "api_key"
+    # API key loaded from environment variable (set via Kubernetes secret)
     key_env: "SIEM_API_KEY"
   timeout_seconds: 30
   retry:
@@ -52,7 +54,7 @@ decision:
   default_timeout_minutes: 60
   confidence_threshold: 0.7
   auto_approve:
-    enabled: false
+    enabled: true
     max_risk_level: "low"
     min_confidence: 0.85
 
@@ -70,7 +72,7 @@ risk:
     module_criticality: 0.15
     time_of_day: 0.10
 
-# Resurrection settings (Phase 2+)
+# Resurrection settings
 resurrection:
   monitoring_duration_minutes: 30
   health_check_interval_seconds: 30
@@ -80,7 +82,7 @@ resurrection:
     auto_trigger_on_anomaly: true
     anomaly_threshold: 0.7
 
-# Auto-resurrection settings (Phase 3)
+# Auto-resurrection settings
 auto_resurrection:
   enabled: true
   max_per_hour: 10
@@ -91,48 +93,50 @@ auto_resurrection:
   require_health_check: true
   monitoring_duration_minutes: 30
 
-# Human review interface (Phase 2+)
+# Human review interface
 interfaces:
   cli:
-    enabled: true
+    enabled: false  # Disable CLI in production
   web:
-    enabled: false
+    enabled: true
     port: 8000
     host: "0.0.0.0"
-    # CORS origins - configure for production
-    # cors_origins:
-    #   - "https://medic-dashboard.example.com"
-    #   - "https://admin.example.com"
-    cors_origins: []  # Empty = no cross-origin requests allowed (secure default)
+    # CORS Origins - IMPORTANT: Configure for your domains
+    # Only allow requests from your trusted dashboard/admin domains
+    cors_origins:
+      - "https://medic-dashboard.example.com"
+      - "https://admin.example.com"
+      - "https://ops.example.com"
+    # Rate limiting
     rate_limit_per_minute: 120
   approval_queue:
     max_pending: 100
     timeout_hours: 24
 
-# Learning system (Phase 4+)
+# Learning system
 learning:
   enabled: true
   database:
-    type: "sqlite"  # sqlite | postgres | memory
-    path: "data/outcomes.db"
+    type: "sqlite"
+    path: "/app/data/outcomes.db"
   analysis:
-    schedule: "daily"  # daily | weekly
+    schedule: "daily"
     min_samples: 50
     time_window_days: 30
     false_positive_threshold: 0.3
     success_rate_threshold: 0.7
     auto_approve_accuracy_threshold: 0.9
   threshold_adjustment:
-    enabled: false  # Requires explicit approval
+    enabled: false  # Manual approval required
     require_approval: true
     max_adjustment_percent: 10
     cooldown_hours: 24
     target_accuracy: 0.95
   feedback:
-    auto_collect: true  # Collect from monitoring automatically
-    require_confirmation: false  # Auto-process simple feedback
+    auto_collect: true
+    require_confirmation: false
 
-# Edge case handling (Phase 5)
+# Edge case handling
 edge_cases:
   rapid_kill_threshold: 3
   rapid_kill_window_seconds: 60
@@ -144,7 +148,7 @@ edge_cases:
   auto_pause_on_critical: true
   auto_escalate: true
 
-# Self-monitoring (Phase 5)
+# Self-monitoring
 self_monitoring:
   enabled: true
   check_interval_seconds: 60
@@ -159,14 +163,14 @@ self_monitoring:
   memory_critical_percent: 90.0
   auto_remediate: true
 
-# Logging configuration
+# Logging configuration - JSON for production
 logging:
   level: "INFO"
-  format: "text"  # json | text
+  format: "json"  # Use JSON for log aggregation
   outputs:
     - type: "console"
     - type: "file"
-      path: "logs/medic.log"
+      path: "/app/logs/medic.log"
       rotation: "daily"
       retention_days: 30
   structured_fields:
@@ -180,8 +184,8 @@ metrics:
   exporter: "prometheus"
   port: 9090
   labels:
-    environment: "development"
+    environment: "production"
     service: "medic-agent"
 
 # Reports directory
-reports_dir: "reports"
+reports_dir: "/app/data/reports"
