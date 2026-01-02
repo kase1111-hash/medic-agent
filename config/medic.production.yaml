@@ -1,0 +1,191 @@
+# Medic Agent Configuration - PRODUCTION
+# Phase 7: Deployment & Operations
+#
+# This is a production-ready configuration template.
+# Copy this to medic.yaml and customize for your environment.
+
+version: "1.0"
+
+# Operating mode - semi_auto recommended for production
+mode:
+  current: "semi_auto"
+  fallback: "observer"
+
+# Smith connection settings
+smith:
+  event_bus:
+    type: "redis"
+    # Use Kubernetes DNS for service discovery
+    host: "redis.redis.svc.cluster.local"
+    port: 6379
+    topic: "smith.events.kill_notifications"
+    response_topic: "medic.responses"
+    consumer_group: "medic-agent"
+  veto_protocol:
+    enabled: true
+    timeout_seconds: 30
+    max_vetos_per_hour: 10
+    cooldown_seconds: 300
+    min_fp_for_veto: 3
+    max_risk_for_veto: 0.3
+    require_human: false
+  negotiation:
+    enabled: true
+    request_topic: "medic.to_smith"
+    response_topic: "smith.to_medic"
+    timeout_seconds: 30
+
+# SIEM integration
+siem:
+  adapter: "rest"
+  # Use Kubernetes DNS for SIEM service
+  endpoint: "http://siem.security.svc.cluster.local:8080/siem"
+  auth:
+    type: "api_key"
+    # API key loaded from environment variable (set via Kubernetes secret)
+    key_env: "SIEM_API_KEY"
+  timeout_seconds: 30
+  retry:
+    max_attempts: 3
+    backoff_seconds: 2
+
+# Decision engine settings
+decision:
+  default_timeout_minutes: 60
+  confidence_threshold: 0.7
+  auto_approve:
+    enabled: true
+    max_risk_level: "low"
+    min_confidence: 0.85
+
+# Risk assessment thresholds
+risk:
+  thresholds:
+    minimal: 0.2
+    low: 0.4
+    medium: 0.6
+    high: 0.8
+  weights:
+    smith_confidence: 0.30
+    siem_risk_score: 0.25
+    false_positive_history: 0.20
+    module_criticality: 0.15
+    time_of_day: 0.10
+
+# Resurrection settings
+resurrection:
+  monitoring_duration_minutes: 30
+  health_check_interval_seconds: 30
+  max_retry_attempts: 2
+  rollback:
+    enabled: true
+    auto_trigger_on_anomaly: true
+    anomaly_threshold: 0.7
+
+# Auto-resurrection settings
+auto_resurrection:
+  enabled: true
+  max_per_hour: 10
+  max_per_module_per_hour: 3
+  cooldown_seconds: 300
+  min_confidence: 0.85
+  max_risk_score: 0.3
+  require_health_check: true
+  monitoring_duration_minutes: 30
+
+# Human review interface
+interfaces:
+  cli:
+    enabled: false  # Disable CLI in production
+  web:
+    enabled: true
+    port: 8000
+    host: "0.0.0.0"
+    # CORS Origins - IMPORTANT: Configure for your domains
+    # Only allow requests from your trusted dashboard/admin domains
+    cors_origins:
+      - "https://medic-dashboard.example.com"
+      - "https://admin.example.com"
+      - "https://ops.example.com"
+    # Rate limiting
+    rate_limit_per_minute: 120
+  approval_queue:
+    max_pending: 100
+    timeout_hours: 24
+
+# Learning system
+learning:
+  enabled: true
+  database:
+    type: "sqlite"
+    path: "/app/data/outcomes.db"
+  analysis:
+    schedule: "daily"
+    min_samples: 50
+    time_window_days: 30
+    false_positive_threshold: 0.3
+    success_rate_threshold: 0.7
+    auto_approve_accuracy_threshold: 0.9
+  threshold_adjustment:
+    enabled: false  # Manual approval required
+    require_approval: true
+    max_adjustment_percent: 10
+    cooldown_hours: 24
+    target_accuracy: 0.95
+  feedback:
+    auto_collect: true
+    require_confirmation: false
+
+# Edge case handling
+edge_cases:
+  rapid_kill_threshold: 3
+  rapid_kill_window_seconds: 60
+  cascade_threshold: 5
+  cascade_window_seconds: 120
+  flap_threshold: 4
+  flap_window_minutes: 30
+  system_anomaly_threshold: 10
+  auto_pause_on_critical: true
+  auto_escalate: true
+
+# Self-monitoring
+self_monitoring:
+  enabled: true
+  check_interval_seconds: 60
+  history_window_minutes: 60
+  latency_warning_ms: 500
+  latency_critical_ms: 2000
+  error_rate_warning: 0.05
+  error_rate_critical: 0.15
+  queue_warning: 50
+  queue_critical: 100
+  memory_warning_percent: 70.0
+  memory_critical_percent: 90.0
+  auto_remediate: true
+
+# Logging configuration - JSON for production
+logging:
+  level: "INFO"
+  format: "json"  # Use JSON for log aggregation
+  outputs:
+    - type: "console"
+    - type: "file"
+      path: "/app/logs/medic.log"
+      rotation: "daily"
+      retention_days: 30
+  structured_fields:
+    - "kill_id"
+    - "decision_id"
+    - "request_id"
+
+# Monitoring and metrics
+metrics:
+  enabled: true
+  exporter: "prometheus"
+  port: 9090
+  labels:
+    environment: "production"
+    service: "medic-agent"
+
+# Reports directory
+reports_dir: "/app/data/reports"
