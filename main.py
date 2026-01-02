@@ -257,9 +257,9 @@ class MedicAgent:
         if metrics_config.get("enabled", True):
             self.metrics = create_metrics(metrics_config)
             self.metrics.set_agent_info(
-                version="7.0.0",
+                version="0.1.0-alpha",
                 mode=self.mode,
-                phase="7",
+                phase="alpha",
             )
 
             # Start metrics server if configured
@@ -997,7 +997,7 @@ def main() -> int:
         "--version",
         "-v",
         action="version",
-        version="Medic Agent v7.0.0 (Phase 7 - Deployment & Operations)",
+        version="Medic Agent v0.1.0-alpha",
     )
 
     args = parser.parse_args()
