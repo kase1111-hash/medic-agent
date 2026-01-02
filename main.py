@@ -78,6 +78,18 @@ from core.errors import (
     CircuitBreaker,
 )
 
+# Phase 7 imports (Web Interface & Multi-Cluster)
+from interfaces.web import (
+    create_web_app, run_web_server, get_ws_manager,
+    broadcast_queue_update, broadcast_decision,
+    broadcast_resurrection_event, broadcast_monitor_event,
+    broadcast_threshold_update, broadcast_system_status,
+)
+from integration.cluster_manager import (
+    ClusterManager, init_cluster_manager, get_cluster_manager,
+    publish_cluster_event, SyncScope,
+)
+
 logger = get_logger("main")
 
 
@@ -128,6 +140,11 @@ class MedicAgent:
         self.metrics: Optional[MedicMetrics] = None
         self.siem_circuit_breaker: Optional[CircuitBreaker] = None
         self.smith_circuit_breaker: Optional[CircuitBreaker] = None
+
+        # Phase 7 components (Web Interface & Multi-Cluster)
+        self.web_app: Optional[Any] = None
+        self.cluster_manager: Optional[ClusterManager] = None
+        self._web_server_task: Optional[asyncio.Task] = None
 
         # Runtime state
         self._running = False
@@ -248,7 +265,7 @@ class MedicAgent:
                     on_critical=self._on_critical_health,
                 )
                 # Start self-monitoring
-                await self.self_monitor.start()
+                await self.self_monitor.start_monitoring()
 
             logger.info("Phase 5 full autonomous components initialized")
 
@@ -275,6 +292,50 @@ class MedicAgent:
 
         logger.info("Phase 6 production components initialized")
 
+        # Create Phase 7 components (Web Interface & Multi-Cluster)
+        web_config = self.config.get("interfaces", {}).get("web", {})
+        if web_config.get("enabled", False):
+            self.web_app = create_web_app(
+                approval_queue=self.approval_queue,
+                config=self.config,
+                resurrector=self.resurrector,
+                monitor=self.monitor,
+                decision_logger=self.decision_logger,
+                outcome_store=self.outcome_store,
+                report_generator=self.report_generator,
+                feedback_processor=self.feedback_processor,
+                threshold_adapter=self.threshold_adapter,
+            )
+            if self.web_app:
+                logger.info("Web API initialized")
+
+        cluster_config = self.config.get("cluster", {})
+        if cluster_config.get("enabled", False):
+            import uuid
+            cluster_id = cluster_config.get("id", str(uuid.uuid4())[:8])
+            cluster_name = cluster_config.get("name", f"medic-{cluster_id}")
+            cluster_endpoint = cluster_config.get("endpoint", "http://localhost:8000")
+
+            self.cluster_manager = init_cluster_manager(
+                cluster_id=cluster_id,
+                cluster_name=cluster_name,
+                endpoint=cluster_endpoint,
+                region=cluster_config.get("region", ""),
+                zone=cluster_config.get("zone", ""),
+            )
+
+            # Register event handlers for cluster sync
+            self.cluster_manager.register_event_handler(
+                SyncScope.DECISIONS, self._handle_cluster_decision_sync
+            )
+            self.cluster_manager.register_event_handler(
+                SyncScope.THRESHOLDS, self._handle_cluster_threshold_sync
+            )
+
+            logger.info(f"Cluster manager initialized: {cluster_name}")
+
+        logger.info("Phase 7 web and cluster components initialized")
+
         logger.info("All components initialized")
 
     def _get_log_file_path(self) -> Optional[str]:
@@ -298,6 +359,21 @@ class MedicAgent:
 
         logger.info("Medic Agent started")
         self._log_startup_info()
+
+        # Start web server in background if enabled
+        if self.web_app:
+            web_config = self.config.get("interfaces", {}).get("web", {})
+            host = web_config.get("host", "0.0.0.0")
+            port = web_config.get("port", 8000)
+            self._web_server_task = asyncio.create_task(
+                run_web_server(self.web_app, host=host, port=port)
+            )
+            logger.info(f"Web server started on {host}:{port}")
+
+        # Start cluster manager if enabled
+        if self.cluster_manager:
+            await self.cluster_manager.start()
+            logger.info("Cluster manager started")
 
         try:
             await self.listener.connect()
@@ -352,6 +428,37 @@ class MedicAgent:
         # Log decision
         self.decision_logger.log_decision(decision, kill_report, siem_context)
 
+        # Broadcast decision via WebSocket for real-time updates
+        try:
+            await broadcast_decision(
+                decision_id=decision.decision_id,
+                outcome=decision.outcome.value,
+                data={
+                    "kill_id": kill_report.kill_id,
+                    "target_module": kill_report.target_module,
+                    "risk_level": decision.risk_level.value,
+                    "risk_score": decision.risk_score,
+                },
+            )
+        except Exception as e:
+            logger.debug(f"WebSocket broadcast failed (non-critical): {e}")
+
+        # Publish to cluster for multi-cluster sync
+        if self.cluster_manager and self.cluster_manager.is_leader:
+            try:
+                await publish_cluster_event(
+                    scope=SyncScope.DECISIONS,
+                    action="create",
+                    data={
+                        "decision_id": decision.decision_id,
+                        "kill_id": kill_report.kill_id,
+                        "outcome": decision.outcome.value,
+                        "risk_level": decision.risk_level.value,
+                    },
+                )
+            except Exception as e:
+                logger.debug(f"Cluster sync failed (non-critical): {e}")
+
         # Acknowledge the message
         await self.listener.acknowledge(kill_report.kill_id)
 
@@ -405,6 +512,20 @@ class MedicAgent:
             target_module=kill_report.target_module,
             recommendation=proposal.recommendation.value,
         )
+
+        # Broadcast queue update via WebSocket
+        try:
+            await broadcast_queue_update(
+                item_id=item_id,
+                action="added",
+                data={
+                    "target_module": kill_report.target_module,
+                    "recommendation": proposal.recommendation.value,
+                    "risk_level": proposal.risk_level.value if hasattr(proposal, 'risk_level') else "unknown",
+                },
+            )
+        except Exception as e:
+            logger.debug(f"WebSocket queue broadcast failed (non-critical): {e}")
 
     async def _handle_semi_auto_mode(
         self,
@@ -816,6 +937,36 @@ class MedicAgent:
             siem_endpoint=self.config.get("siem", {}).get("endpoint"),
         )
 
+    def _handle_cluster_decision_sync(self, event) -> None:
+        """Handle decision sync events from other cluster nodes."""
+        logger.info(
+            f"Received decision sync from cluster {event.source_cluster}",
+            event_id=event.event_id,
+            action=event.action,
+        )
+        # Decisions from other clusters are logged for visibility
+        # but not re-processed to avoid loops
+
+    def _handle_cluster_threshold_sync(self, event) -> None:
+        """Handle threshold sync events from other cluster nodes."""
+        logger.info(
+            f"Received threshold sync from cluster {event.source_cluster}",
+            event_id=event.event_id,
+            action=event.action,
+        )
+        # Apply threshold updates from leader cluster
+        if self.threshold_adapter and event.action == "update":
+            data = event.data
+            if "key" in data and "value" in data:
+                try:
+                    self.threshold_adapter.manual_update(
+                        data["key"],
+                        data["value"],
+                        reason=f"Cluster sync from {event.source_cluster}",
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to apply cluster threshold sync: {e}")
+
     async def shutdown(self) -> None:
         """Gracefully shut down the agent."""
         if not self._running:
@@ -843,7 +994,21 @@ class MedicAgent:
 
         # Stop self-monitor (Phase 5)
         if self.self_monitor:
-            await self.self_monitor.stop()
+            await self.self_monitor.stop_monitoring()
+
+        # Stop cluster manager (Phase 7)
+        if self.cluster_manager:
+            await self.cluster_manager.stop()
+            logger.info("Cluster manager stopped")
+
+        # Stop web server (Phase 7)
+        if self._web_server_task:
+            self._web_server_task.cancel()
+            try:
+                await self._web_server_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("Web server stopped")
 
         # Log final stats
         uptime = (datetime.utcnow() - self._start_time).total_seconds() if self._start_time else 0
