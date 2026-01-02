@@ -18,6 +18,23 @@ from core.logger import get_logger, configure_logging
 from core.listener import KillReportListener, SmithEventListener
 from core.siem_interface import SIEMAdapter, RESTSIEMAdapter
 from core.decision import DecisionEngine, ObserverDecisionEngine
+from core.risk import (
+    RiskAssessor,
+    AdvancedRiskAssessor,
+    RiskAssessment,
+    RiskFactor,
+    RiskThresholds,
+    RiskWeights,
+    create_risk_assessor,
+)
+from core.event_bus import (
+    EventBus,
+    Event,
+    EventType,
+    get_event_bus,
+    create_event_bus,
+    on_event,
+)
 
 __all__ = [
     # Models
@@ -41,4 +58,19 @@ __all__ = [
     # Decision
     "DecisionEngine",
     "ObserverDecisionEngine",
+    # Risk
+    "RiskAssessor",
+    "AdvancedRiskAssessor",
+    "RiskAssessment",
+    "RiskFactor",
+    "RiskThresholds",
+    "RiskWeights",
+    "create_risk_assessor",
+    # Event Bus
+    "EventBus",
+    "Event",
+    "EventType",
+    "get_event_bus",
+    "create_event_bus",
+    "on_event",
 ]

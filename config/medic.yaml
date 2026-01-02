@@ -70,6 +70,17 @@ resurrection:
     auto_trigger_on_anomaly: true
     anomaly_threshold: 0.7
 
+# Auto-resurrection settings (Phase 3)
+auto_resurrection:
+  enabled: true
+  max_per_hour: 10
+  max_per_module_per_hour: 3
+  cooldown_seconds: 300
+  min_confidence: 0.85
+  max_risk_score: 0.3
+  require_health_check: true
+  monitoring_duration_minutes: 30
+
 # Human review interface (Phase 2+)
 interfaces:
   cli:

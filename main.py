@@ -40,6 +40,11 @@ from execution.resurrector import create_resurrector, Resurrector
 from execution.monitor import create_monitor, ResurrectionMonitor
 from interfaces.approval_queue import create_approval_queue, ApprovalQueue
 
+# Phase 3 imports
+from core.risk import create_risk_assessor, RiskAssessor, AdvancedRiskAssessor
+from core.event_bus import create_event_bus, EventBus, EventType, Event
+from execution.auto_resurrect import create_auto_resurrector, AutoResurrectionManager
+
 logger = get_logger("main")
 
 
@@ -67,6 +72,11 @@ class MedicAgent:
         self.resurrector: Optional[Resurrector] = None
         self.monitor: Optional[ResurrectionMonitor] = None
         self.approval_queue: Optional[ApprovalQueue] = None
+
+        # Phase 3 components
+        self.risk_assessor: Optional[AdvancedRiskAssessor] = None
+        self.event_bus: Optional[EventBus] = None
+        self.auto_resurrector: Optional[AutoResurrectionManager] = None
 
         # Runtime state
         self._running = False
@@ -108,6 +118,22 @@ class MedicAgent:
             self.monitor.set_rollback_callback(self._handle_rollback)
 
             logger.info("Phase 2 components initialized")
+
+        # Create Phase 3 components (semi-auto mode)
+        if self.mode in ("semi_auto", "full_auto"):
+            self.event_bus = create_event_bus()
+            self.risk_assessor = create_risk_assessor(self.config)
+            self.auto_resurrector = create_auto_resurrector(
+                self.config,
+                resurrector=self.resurrector,
+                monitor=self.monitor,
+                risk_assessor=self.risk_assessor,
+            )
+
+            # Set up event handlers for auto-resurrection
+            self._setup_event_handlers()
+
+            logger.info("Phase 3 components initialized")
 
         logger.info("All components initialized")
 
@@ -244,27 +270,60 @@ class MedicAgent:
         siem_context,
         decision,
     ) -> None:
-        """Handle kill report in semi-auto mode."""
-        # Auto-approve if eligible, otherwise queue
-        if decision.outcome == DecisionOutcome.APPROVE_AUTO and decision.auto_approve_eligible:
-            logger.info(
-                "Auto-approving resurrection",
-                kill_id=kill_report.kill_id,
-            )
-            # Create request and execute
-            from core.models import ResurrectionRequest
-            request = ResurrectionRequest.from_decision(decision, kill_report)
-            request.approved_by = "auto"
+        """Handle kill report in semi-auto mode using Phase 3 components."""
+        # Perform advanced risk assessment
+        risk_assessment = None
+        if self.risk_assessor:
+            risk_assessment = self.risk_assessor.assess(kill_report, siem_context)
 
-            result = await self.resurrector.resurrect(request)
-            if result.success:
-                # Start monitoring
-                await self.monitor.start_monitoring(
-                    request,
-                    duration_minutes=self.config.get("resurrection", {}).get(
-                        "monitoring_duration_minutes", 30
-                    ),
+            # Emit risk assessment event
+            if self.event_bus:
+                await self.event_bus.emit_event(
+                    EventType.DECISION_MADE,
+                    source="medic.semi_auto",
+                    payload={
+                        "kill_id": kill_report.kill_id,
+                        "risk_level": risk_assessment.risk_level.value,
+                        "risk_score": risk_assessment.risk_score,
+                        "auto_approve_eligible": risk_assessment.auto_approve_eligible,
+                    },
+                    correlation_id=kill_report.kill_id,
                 )
+
+        # Try auto-resurrection if eligible
+        if (decision.outcome == DecisionOutcome.APPROVE_AUTO
+            and decision.auto_approve_eligible
+            and self.auto_resurrector):
+
+            logger.info(
+                "Attempting auto-resurrection",
+                kill_id=kill_report.kill_id,
+                risk_score=decision.risk_score,
+            )
+
+            attempt = await self.auto_resurrector.attempt_resurrection(
+                kill_report, decision, risk_assessment
+            )
+
+            # Emit resurrection event
+            if self.event_bus:
+                await self.event_bus.emit_event(
+                    EventType.RESURRECTION_COMPLETED if attempt.result.value == "success"
+                    else EventType.RESURRECTION_FAILED,
+                    source="medic.auto_resurrector",
+                    payload=attempt.to_dict(),
+                    correlation_id=kill_report.kill_id,
+                )
+
+            if attempt.result.value != "success":
+                # Auto-resurrection not possible, queue for manual review
+                logger.info(
+                    "Auto-resurrection not possible, queuing for manual review",
+                    kill_id=kill_report.kill_id,
+                    reason=attempt.error_message,
+                )
+                await self._handle_manual_mode(kill_report, siem_context, decision)
+
         elif decision.outcome != DecisionOutcome.DENY:
             # Queue for manual review
             await self._handle_manual_mode(kill_report, siem_context, decision)
@@ -278,6 +337,52 @@ class MedicAgent:
         )
         if self.resurrector:
             await self.resurrector.rollback(request_id, reason)
+
+        # Emit rollback event
+        if self.event_bus:
+            await self.event_bus.emit_event(
+                EventType.RESURRECTION_ROLLBACK,
+                source="medic.monitor",
+                payload={"request_id": request_id, "reason": reason},
+            )
+
+    def _setup_event_handlers(self) -> None:
+        """Set up event handlers for Phase 3 event-driven architecture."""
+        if not self.event_bus:
+            return
+
+        # Handler for anomaly detection
+        async def on_anomaly(event: Event) -> None:
+            logger.warning(
+                "Anomaly detected via event bus",
+                event_id=event.event_id,
+                payload=event.payload,
+            )
+            # Could trigger additional analysis or alerting here
+
+        self.event_bus.subscribe(EventType.ANOMALY_DETECTED, on_anomaly)
+
+        # Handler for resurrection failures
+        async def on_resurrection_failed(event: Event) -> None:
+            module = event.payload.get("target_module")
+            if module and self.auto_resurrector:
+                # Consider blacklisting after repeated failures
+                history = self.auto_resurrector.get_history(limit=10, module=module)
+                failures = sum(1 for a in history if a.result.value == "failed")
+                if failures >= 3:
+                    self.auto_resurrector.blacklist_module(
+                        module,
+                        reason=f"Too many failures ({failures} in recent history)"
+                    )
+                    logger.warning(
+                        "Module blacklisted due to repeated failures",
+                        module=module,
+                        failure_count=failures,
+                    )
+
+        self.event_bus.subscribe(EventType.RESURRECTION_FAILED, on_resurrection_failed)
+
+        logger.info("Event handlers configured")
 
     def _log_observer_summary(self, decision) -> None:
         """Log observer mode summary of what would have happened."""
@@ -489,7 +594,7 @@ def main() -> int:
         "--version",
         "-v",
         action="version",
-        version="Medic Agent v2.0.0 (Phase 2)",
+        version="Medic Agent v3.0.0 (Phase 3 - Semi-Autonomous)",
     )
 
     args = parser.parse_args()

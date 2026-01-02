@@ -28,6 +28,13 @@ from execution.monitor import (
     HealthStatus,
     create_monitor,
 )
+from execution.auto_resurrect import (
+    AutoResurrectionManager,
+    AutoResurrectionConfig,
+    AutoResurrectionResult,
+    ResurrectionAttempt,
+    create_auto_resurrector,
+)
 
 __all__ = [
     # Recommendation
@@ -50,4 +57,10 @@ __all__ = [
     "AnomalyType",
     "HealthStatus",
     "create_monitor",
+    # Auto-Resurrection
+    "AutoResurrectionManager",
+    "AutoResurrectionConfig",
+    "AutoResurrectionResult",
+    "ResurrectionAttempt",
+    "create_auto_resurrector",
 ]
