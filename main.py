@@ -32,7 +32,13 @@ from core.siem_interface import create_siem_adapter, SIEMAdapter
 from core.decision import create_decision_engine, DecisionEngine
 from core.log_decisions import create_decision_logger, DecisionLogger
 from core.reporting import create_report_generator, ReportGenerator
-from core.models import KillReport
+from core.models import KillReport, DecisionOutcome
+
+# Phase 2+ imports
+from execution.recommendation import create_recommendation_engine, RecommendationEngine
+from execution.resurrector import create_resurrector, Resurrector
+from execution.monitor import create_monitor, ResurrectionMonitor
+from interfaces.approval_queue import create_approval_queue, ApprovalQueue
 
 logger = get_logger("main")
 
@@ -49,12 +55,18 @@ class MedicAgent:
         self.config = config
         self.mode = config.get("mode", {}).get("current", "observer")
 
-        # Initialize components
+        # Core components (Phase 0-1)
         self.listener: Optional[KillReportListener] = None
         self.siem_adapter: Optional[SIEMAdapter] = None
         self.decision_engine: Optional[DecisionEngine] = None
         self.decision_logger: Optional[DecisionLogger] = None
         self.report_generator: Optional[ReportGenerator] = None
+
+        # Execution components (Phase 2+)
+        self.recommendation_engine: Optional[RecommendationEngine] = None
+        self.resurrector: Optional[Resurrector] = None
+        self.monitor: Optional[ResurrectionMonitor] = None
+        self.approval_queue: Optional[ApprovalQueue] = None
 
         # Runtime state
         self._running = False
@@ -74,7 +86,7 @@ class MedicAgent:
             log_file=self._get_log_file_path(),
         )
 
-        # Create components
+        # Create core components (Phase 0-1)
         self.listener = create_listener(self.config)
         self.siem_adapter = create_siem_adapter(self.config)
         self.decision_engine = create_decision_engine(self.config)
@@ -82,6 +94,20 @@ class MedicAgent:
         self.report_generator = create_report_generator(
             self.decision_logger, self.config
         )
+
+        # Create execution components (Phase 2+)
+        if self.mode in ("manual", "semi_auto", "full_auto"):
+            self.recommendation_engine = create_recommendation_engine(
+                self.config, self.decision_logger
+            )
+            self.resurrector = create_resurrector(self.config)
+            self.monitor = create_monitor(self.config)
+            self.approval_queue = create_approval_queue(self.config)
+
+            # Set up rollback callback
+            self.monitor.set_rollback_callback(self._handle_rollback)
+
+            logger.info("Phase 2 components initialized")
 
         logger.info("All components initialized")
 
@@ -174,9 +200,84 @@ class MedicAgent:
             risk_level=decision.risk_level.value,
         )
 
-        # In observer mode, log what would have happened
+        # Mode-specific handling
         if self.mode == "observer":
             self._log_observer_summary(decision)
+        elif self.mode == "manual":
+            await self._handle_manual_mode(kill_report, siem_context, decision)
+        elif self.mode == "semi_auto":
+            await self._handle_semi_auto_mode(kill_report, siem_context, decision)
+
+    async def _handle_manual_mode(
+        self,
+        kill_report: KillReport,
+        siem_context,
+        decision,
+    ) -> None:
+        """Handle kill report in manual mode - queue for human approval."""
+        # Skip if decision is to deny
+        if decision.outcome == DecisionOutcome.DENY:
+            logger.info(
+                "Decision is DENY, not queuing for approval",
+                kill_id=kill_report.kill_id,
+            )
+            return
+
+        # Generate proposal
+        proposal = self.recommendation_engine.generate_proposal(
+            kill_report, siem_context, decision
+        )
+
+        # Queue for approval
+        item_id = await self.approval_queue.enqueue(proposal)
+
+        logger.info(
+            "Proposal queued for manual approval",
+            item_id=item_id,
+            target_module=kill_report.target_module,
+            recommendation=proposal.recommendation.value,
+        )
+
+    async def _handle_semi_auto_mode(
+        self,
+        kill_report: KillReport,
+        siem_context,
+        decision,
+    ) -> None:
+        """Handle kill report in semi-auto mode."""
+        # Auto-approve if eligible, otherwise queue
+        if decision.outcome == DecisionOutcome.APPROVE_AUTO and decision.auto_approve_eligible:
+            logger.info(
+                "Auto-approving resurrection",
+                kill_id=kill_report.kill_id,
+            )
+            # Create request and execute
+            from core.models import ResurrectionRequest
+            request = ResurrectionRequest.from_decision(decision, kill_report)
+            request.approved_by = "auto"
+
+            result = await self.resurrector.resurrect(request)
+            if result.success:
+                # Start monitoring
+                await self.monitor.start_monitoring(
+                    request,
+                    duration_minutes=self.config.get("resurrection", {}).get(
+                        "monitoring_duration_minutes", 30
+                    ),
+                )
+        elif decision.outcome != DecisionOutcome.DENY:
+            # Queue for manual review
+            await self._handle_manual_mode(kill_report, siem_context, decision)
+
+    async def _handle_rollback(self, request_id: str, reason: str) -> None:
+        """Handle rollback triggered by monitor."""
+        logger.warning(
+            "Rollback triggered by monitor",
+            request_id=request_id,
+            reason=reason,
+        )
+        if self.resurrector:
+            await self.resurrector.rollback(request_id, reason)
 
     def _log_observer_summary(self, decision) -> None:
         """Log observer mode summary of what would have happened."""
@@ -322,6 +423,18 @@ async def main_async(args: argparse.Namespace) -> int:
         await agent.generate_report()
         return 0
 
+    if args.cli:
+        # Run CLI interface for manual approval
+        await agent.initialize()
+        from interfaces.cli import run_cli_async
+        await run_cli_async(
+            agent.approval_queue,
+            config,
+            resurrector=agent.resurrector,
+            monitor=agent.monitor,
+        )
+        return 0
+
     # Set up signal handlers
     setup_signal_handlers(agent)
 
@@ -367,10 +480,16 @@ def main() -> int:
     )
 
     parser.add_argument(
+        "--cli",
+        action="store_true",
+        help="Run the CLI interface for manual approval",
+    )
+
+    parser.add_argument(
         "--version",
         "-v",
         action="version",
-        version="Medic Agent v1.0.0 (Phase 1)",
+        version="Medic Agent v2.0.0 (Phase 2)",
     )
 
     args = parser.parse_args()
