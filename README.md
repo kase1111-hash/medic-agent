@@ -2,30 +2,32 @@
 
 **Autonomous Resilience Layer for Smith Kill Events**
 
-Medic Agent is an intelligent system that monitors kill events from Smith, evaluates their legitimacy through SIEM integration, and orchestrates resurrection workflows with adaptive learning capabilities.
+Medic Agent is an **autonomous security agent** and **self-healing AI system** that monitors kill events from Smith, evaluates their legitimacy through **AI security monitoring** and SIEM integration, and orchestrates resurrection workflows with **adaptive learning** capabilities. As a core component of the **Agent-OS ecosystem**, it provides **cognitive security monitoring** and **agent health monitoring** for distributed AI agent deployments.
+
+Built for **digital sovereignty** and **owned AI infrastructure**, Medic Agent enables teams to maintain full control over their **AI agent security** and **threat detection** workflows.
 
 ## Features
 
 ### Core Capabilities
-- **Kill Report Monitoring**: Real-time subscription to Smith's kill notification feed
-- **SIEM Integration**: Contextual threat intelligence queries for informed decision-making
-- **Multi-Mode Operation**: Observer, Manual, Semi-Auto, and Full-Auto modes
-- **Risk Assessment**: Advanced risk scoring with configurable thresholds and weights
-- **Resurrection Workflow**: Automated execution with health monitoring and rollback
-- **Adaptive Learning**: Outcome tracking, pattern analysis, and threshold adjustment
+- **Kill Report Monitoring**: Real-time subscription to Smith's kill notification feed with **security event management**
+- **SIEM Integration**: Contextual **AI threat detection** and threat intelligence queries for informed decision-making
+- **Multi-Mode Operation**: Observer, Manual, Semi-Auto, and Full-Auto modes for **controlled AI learning**
+- **Risk Assessment**: Advanced risk scoring with configurable thresholds and weights using **cognitive work accounting**
+- **Resurrection Workflow**: Automated execution with **agent health monitoring** and rollback capabilities
+- **Adaptive Learning**: **Pattern analysis**, outcome tracking, and **threshold adjustment** for continuous improvement
 
 ### Advanced Features
-- **Smith Collaboration**: Bidirectional negotiation and veto protocol support
-- **Edge Case Detection**: Rapid kills, cascading failures, and flapping module detection
-- **Self-Monitoring**: Agent health monitoring with auto-remediation
-- **Multi-Cluster Support**: Distributed deployments with leader election
+- **Smith Collaboration**: Bidirectional **AI negotiation** and veto protocol support with **trust enforcement**
+- **Edge Case Detection**: Rapid kills, cascading failures, and flapping module detection using **semantic matching**
+- **Self-Monitoring**: **Cognitive firewall** with agent health monitoring and auto-remediation
+- **Multi-Cluster Support**: Distributed deployments with leader election for **multi-agent operating system** environments
 
 ### Production Ready
-- **REST API**: Complete FastAPI-based REST API with OpenAPI documentation
-- **WebSocket Support**: Real-time event streaming for dashboards
-- **Web Dashboard**: Built-in monitoring dashboard with live updates
-- **Prometheus Metrics**: Full observability with metrics export
-- **Security**: API key authentication, RBAC, rate limiting, and security headers
+- **REST API**: Complete FastAPI-based REST API with OpenAPI documentation for **language-native architecture**
+- **WebSocket Support**: Real-time event streaming for dashboards and **AI security audit logs**
+- **Web Dashboard**: Built-in monitoring dashboard with live updates and **process legibility**
+- **Prometheus Metrics**: Full **observability** with metrics export for **SIEM for AI systems**
+- **Security**: API key authentication, RBAC, rate limiting, security headers, and **AI permission system**
 
 ## Current Version
 
@@ -381,3 +383,45 @@ This project is proprietary software. See [LICENSE.md](LICENSE.md).
 ## Support
 
 For issues and feature requests, please use the GitHub issue tracker.
+
+---
+
+## Connected Repositories
+
+Medic Agent is part of a larger ecosystem of AI agent infrastructure and natural language computing projects.
+
+### 🤖 Agent-OS Ecosystem
+
+| Repository | Description |
+|------------|-------------|
+| [Agent-OS](https://github.com/kase1111-hash/Agent-OS) | Natural-language native operating system for AI agents (NLOS) |
+| [synth-mind](https://github.com/kase1111-hash/synth-mind) | NLOS-based agent with psychological modules for emergent continuity and empathy |
+| [boundary-daemon](https://github.com/kase1111-hash/boundary-daemon-) | Mandatory trust enforcement layer defining cognition boundaries |
+| [memory-vault](https://github.com/kase1111-hash/memory-vault) | Secure, offline-capable, owner-sovereign storage for cognitive artifacts |
+| [value-ledger](https://github.com/kase1111-hash/value-ledger) | Economic accounting layer for cognitive work (ideas, effort, novelty) |
+| [learning-contracts](https://github.com/kase1111-hash/learning-contracts) | Safety protocols for AI learning and data management |
+
+### 🛡️ Security Infrastructure
+
+| Repository | Description |
+|------------|-------------|
+| [Boundary-SIEM](https://github.com/kase1111-hash/Boundary-SIEM) | Security Information and Event Management system for AI agents |
+
+### 🔗 NatLangChain Ecosystem
+
+| Repository | Description |
+|------------|-------------|
+| [NatLangChain](https://github.com/kase1111-hash/NatLangChain) | Prose-first, intent-native blockchain protocol for human intent in natural language |
+| [IntentLog](https://github.com/kase1111-hash/IntentLog) | Git for human reasoning - tracks "why" changes happen via prose commits |
+| [RRA-Module](https://github.com/kase1111-hash/RRA-Module) | Revenant Repo Agent - converts abandoned repos into autonomous licensing agents |
+| [mediator-node](https://github.com/kase1111-hash/mediator-node) | LLM mediation layer for matching, negotiation, and closure proposals |
+| [ILR-module](https://github.com/kase1111-hash/ILR-module) | IP & Licensing Reconciliation for dispute resolution |
+| [Finite-Intent-Executor](https://github.com/kase1111-hash/Finite-Intent-Executor) | Posthumous execution of predefined intent (Solidity smart contract) |
+
+### 🎮 Game Development
+
+| Repository | Description |
+|------------|-------------|
+| [Shredsquatch](https://github.com/kase1111-hash/Shredsquatch) | 3D first-person snowboarding infinite runner (SkiFree homage) |
+| [Midnight-pulse](https://github.com/kase1111-hash/Midnight-pulse) | Procedurally generated night drive |
+| [Long-Home](https://github.com/kase1111-hash/Long-Home) | Godot narrative game project |
