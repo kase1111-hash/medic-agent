@@ -34,7 +34,7 @@ Built for **digital sovereignty** and **owned AI infrastructure**, Medic Agent e
 **v0.1.0-alpha** - Initial alpha release with all core features implemented
 
 [![Build Status](https://github.com/kase1111-hash/medic-agent/workflows/CI/badge.svg)](https://github.com/kase1111-hash/medic-agent/actions)
-[![License](https://img.shields.io/badge/license-proprietary-red.svg)](LICENSE.md)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE.md)
 
 ## Quick Start
 
@@ -122,6 +122,7 @@ When the web interface is enabled, access:
 | [Configuration Guide](docs/CONFIGURATION.md) | Configuration options and examples |
 | [Architecture](docs/ARCHITECTURE.md) | System architecture and design patterns |
 | [Specification Sheet](docs/SPEC_SHEET.md) | Technical specifications and data models |
+| [Security Policy](SECURITY.md) | Security guidelines and vulnerability reporting |
 
 ## Architecture
 
@@ -378,7 +379,7 @@ See [CHANGELOG.md](CHANGELOG.md) for release notes and version history.
 
 ## License
 
-This project is proprietary software. See [LICENSE.md](LICENSE.md).
+This project is licensed under the MIT License. See [LICENSE.md](LICENSE.md) for details.
 
 ## Support
 
