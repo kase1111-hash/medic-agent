@@ -6,7 +6,7 @@ to ensure robust operation under adverse conditions.
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 import uuid
 import asyncio
@@ -27,7 +27,7 @@ class TestBoundaryConditions:
         """Handle kill report with zero confidence score."""
         report = KillReport(
             kill_id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="test",
             target_instance_id="instance",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -46,7 +46,7 @@ class TestBoundaryConditions:
         """Handle kill report with maximum confidence score."""
         report = KillReport(
             kill_id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="test",
             target_instance_id="instance",
             kill_reason=KillReason.THREAT_DETECTED,
@@ -64,7 +64,7 @@ class TestBoundaryConditions:
         """Handle kill report with no evidence."""
         report = KillReport(
             kill_id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="test",
             target_instance_id="instance",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -83,7 +83,7 @@ class TestBoundaryConditions:
         many_deps = [f"service-{i}" for i in range(100)]
         report = KillReport(
             kill_id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="test",
             target_instance_id="instance",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -102,7 +102,7 @@ class TestBoundaryConditions:
         siem_response = SIEMContextResponse(
             query_id=str(uuid.uuid4()),
             kill_id=sample_kill_report.kill_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={},
             false_positive_history=1000,  # Very high
@@ -130,7 +130,7 @@ class TestErrorHandling:
         minimal_response = SIEMContextResponse(
             query_id=str(uuid.uuid4()),
             kill_id=sample_kill_report.kill_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={},
             false_positive_history=0,
@@ -147,7 +147,7 @@ class TestErrorHandling:
         """Handle very old kill reports."""
         old_report = KillReport(
             kill_id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow() - timedelta(days=365),  # 1 year old
+            timestamp=datetime.now(timezone.utc) - timedelta(days=365),  # 1 year old
             target_module="test",
             target_instance_id="instance",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -165,7 +165,7 @@ class TestErrorHandling:
         """Handle kill reports with future timestamps."""
         future_report = KillReport(
             kill_id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow() + timedelta(hours=1),  # Future
+            timestamp=datetime.now(timezone.utc) + timedelta(hours=1),  # Future
             target_module="test",
             target_instance_id="instance",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -193,7 +193,7 @@ class TestConcurrency:
         reports = [
             KillReport(
                 kill_id=str(uuid.uuid4()),
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 target_module=f"service-{i}",
                 target_instance_id=f"instance-{i}",
                 kill_reason=KillReason.ANOMALY_BEHAVIOR,

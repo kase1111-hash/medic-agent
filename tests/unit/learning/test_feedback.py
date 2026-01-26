@@ -3,7 +3,7 @@ Unit tests for the FeedbackProcessor module.
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, MagicMock
 
 from learning.outcome_store import (
@@ -35,7 +35,7 @@ class TestFeedback:
             feedback_type=FeedbackType.FALSE_POSITIVE_REPORT,
             source=FeedbackSource.HUMAN_OPERATOR,
             submitted_by="operator-1",
-            submitted_at=datetime.utcnow(),
+            submitted_at=datetime.now(timezone.utc),
             value=True,
             comment="Smith was wrong",
         )
@@ -46,7 +46,7 @@ class TestFeedback:
 
     def test_to_dict(self):
         """Test serializing feedback to dict."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         feedback = Feedback(
             feedback_id="fb-001",
             outcome_id="out-001",
@@ -120,7 +120,7 @@ class TestFeedbackProcessor:
             decision_id="dec-001",
             kill_id="kill-001",
             target_module="test-service",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             outcome_type=OutcomeType.UNDETERMINED,
             original_risk_score=0.3,
             original_confidence=0.9,
@@ -384,7 +384,7 @@ class TestFeedbackProcessor:
                 decision_id=f"dec-{i}",
                 kill_id=f"kill-{i}",
                 target_module="service",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 outcome_type=OutcomeType.SUCCESS,
                 original_risk_score=0.2,
                 original_confidence=0.9,
@@ -445,7 +445,7 @@ class TestAutomatedFeedbackCollector:
             decision_id="dec-001",
             kill_id="kill-001",
             target_module="test-service",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             outcome_type=OutcomeType.UNDETERMINED,
             original_risk_score=0.3,
             original_confidence=0.9,

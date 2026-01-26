@@ -6,7 +6,7 @@ Provides counters, gauges, and histograms for key operations.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 import time
@@ -49,7 +49,7 @@ class MetricValue:
     metric_type: MetricType
     value: float
     labels: Dict[str, str] = field(default_factory=dict)
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class InternalMetricsStore:

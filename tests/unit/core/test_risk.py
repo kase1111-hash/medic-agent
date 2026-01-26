@@ -5,7 +5,7 @@ Tests for the risk assessment engine and related functionality.
 """
 
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 from core.models import KillReport, KillReason, Severity, RiskLevel
@@ -59,7 +59,7 @@ def sample_kill_report():
     """Standard kill report for testing."""
     return KillReport(
         kill_id="test-kill-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         target_module="test-service",
         target_instance_id="instance-001",
         kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -77,7 +77,7 @@ def low_risk_kill_report():
     """Kill report that should result in low risk."""
     return KillReport(
         kill_id="test-kill-low-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         target_module="cache-service",
         target_instance_id="cache-001",
         kill_reason=KillReason.RESOURCE_EXHAUSTION,
@@ -95,7 +95,7 @@ def high_risk_kill_report():
     """Kill report that should result in high risk."""
     return KillReport(
         kill_id="test-kill-high-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         target_module="auth-service",
         target_instance_id="auth-001",
         kill_reason=KillReason.THREAT_DETECTED,
@@ -114,7 +114,7 @@ def sample_siem_context():
     return SIEMContextResponse(
         query_id="query-001",
         kill_id="test-kill-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         threat_indicators=[],
         historical_behavior={"error_rate": 0.02},
         false_positive_history=2,
@@ -131,7 +131,7 @@ def low_risk_siem_context():
     return SIEMContextResponse(
         query_id="query-low-001",
         kill_id="test-kill-low-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         threat_indicators=[],
         historical_behavior={"stability_score": 0.95},
         false_positive_history=5,
@@ -148,14 +148,14 @@ def high_risk_siem_context():
     return SIEMContextResponse(
         query_id="query-high-001",
         kill_id="test-kill-high-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         threat_indicators=[
             ThreatIndicator(
                 indicator_type="ip",
                 value="192.168.1.100",
                 threat_score=0.85,
                 source="threat_intel",
-                last_seen=datetime.utcnow(),
+                last_seen=datetime.now(timezone.utc),
                 tags=["c2", "apt"],
             ),
         ],
@@ -241,7 +241,7 @@ class TestRiskAssessor:
         """Test that critical modules have higher risk scores."""
         regular_report = KillReport(
             kill_id="regular-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="cache-service",
             target_instance_id="cache-001",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -255,7 +255,7 @@ class TestRiskAssessor:
 
         critical_report = KillReport(
             kill_id="critical-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="auth-service",  # Critical module
             target_instance_id="auth-001",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -279,7 +279,7 @@ class TestRiskAssessor:
         """Test that high Smith confidence increases risk score."""
         low_confidence = KillReport(
             kill_id="low-conf-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="test-service",
             target_instance_id="test-001",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -293,7 +293,7 @@ class TestRiskAssessor:
 
         high_confidence = KillReport(
             kill_id="high-conf-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="test-service",
             target_instance_id="test-001",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -316,7 +316,7 @@ class TestRiskAssessor:
         no_fp_context = SIEMContextResponse(
             query_id="no-fp-001",
             kill_id=sample_kill_report.kill_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={},
             false_positive_history=0,
@@ -329,7 +329,7 @@ class TestRiskAssessor:
         high_fp_context = SIEMContextResponse(
             query_id="high-fp-001",
             kill_id=sample_kill_report.kill_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={},
             false_positive_history=10,  # Many false positives
@@ -350,7 +350,7 @@ class TestRiskAssessor:
         no_threats = SIEMContextResponse(
             query_id="no-threats-001",
             kill_id=sample_kill_report.kill_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={},
             false_positive_history=0,
@@ -363,14 +363,14 @@ class TestRiskAssessor:
         with_threats = SIEMContextResponse(
             query_id="with-threats-001",
             kill_id=sample_kill_report.kill_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[
                 ThreatIndicator(
                     indicator_type="ip",
                     value="evil.ip",
                     threat_score=0.9,
                     source="threat_intel",
-                    last_seen=datetime.utcnow(),
+                    last_seen=datetime.now(timezone.utc),
                     tags=["malicious"],
                 ),
             ],
@@ -418,7 +418,7 @@ class TestRiskLevelMapping:
         """Test that scores below 0.2 result in MINIMAL risk."""
         report = KillReport(
             kill_id="minimal-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="non-critical",
             target_instance_id="nc-001",
             kill_reason=KillReason.RESOURCE_EXHAUSTION,
@@ -433,7 +433,7 @@ class TestRiskLevelMapping:
         low_context = SIEMContextResponse(
             query_id="min-001",
             kill_id=report.kill_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={},
             false_positive_history=10,
@@ -451,7 +451,7 @@ class TestRiskLevelMapping:
         """Test that very high scores result in HIGH or CRITICAL risk."""
         report = KillReport(
             kill_id="critical-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="payment-processor",
             target_instance_id="payment-001",
             kill_reason=KillReason.THREAT_DETECTED,
@@ -466,14 +466,14 @@ class TestRiskLevelMapping:
         critical_context = SIEMContextResponse(
             query_id="crit-001",
             kill_id=report.kill_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[
                 ThreatIndicator(
                     indicator_type="behavior",
                     value="ransomware_encryption",
                     threat_score=0.99,
                     source="edr",
-                    last_seen=datetime.utcnow(),
+                    last_seen=datetime.now(timezone.utc),
                     tags=["ransomware"],
                 ),
             ],
@@ -500,7 +500,7 @@ class TestRiskAssessmentEdgeCases:
         minimal_context = SIEMContextResponse(
             query_id="minimal-001",
             kill_id=sample_kill_report.kill_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={},
             false_positive_history=0,
@@ -518,7 +518,7 @@ class TestRiskAssessmentEdgeCases:
         """Test assessment with empty evidence."""
         report = KillReport(
             kill_id="empty-evidence-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="test-service",
             target_instance_id="test-001",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -537,7 +537,7 @@ class TestRiskAssessmentEdgeCases:
         """Test that many dependencies affect risk."""
         few_deps = KillReport(
             kill_id="few-deps-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="isolated-service",
             target_instance_id="iso-001",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -551,7 +551,7 @@ class TestRiskAssessmentEdgeCases:
 
         many_deps = KillReport(
             kill_id="many-deps-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="core-service",
             target_instance_id="core-001",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,

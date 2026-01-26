@@ -6,7 +6,7 @@ to improve decision accuracy over time.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 import json
@@ -138,7 +138,7 @@ class ThresholdAdapter:
         self.current = CurrentThresholds(
             risk_thresholds=initial_thresholds or RiskThresholds(),
             risk_weights=initial_weights or RiskWeights(),
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(timezone.utc),
         )
 
         self._pending_proposals: Dict[str, AdjustmentProposal] = {}
@@ -159,15 +159,15 @@ class ThresholdAdapter:
 
         # Check cooldown
         if self._last_analysis:
-            elapsed = (datetime.utcnow() - self._last_analysis).total_seconds() / 3600
+            elapsed = (datetime.now(timezone.utc) - self._last_analysis).total_seconds() / 3600
             if elapsed < self.config.adjustment_cooldown_hours:
                 logger.debug(f"Cooldown active: {elapsed:.1f}h since last analysis")
                 return None
 
-        self._last_analysis = datetime.utcnow()
+        self._last_analysis = datetime.now(timezone.utc)
 
         # Get outcomes for analysis
-        since = datetime.utcnow() - timedelta(days=self.config.analysis_window_days)
+        since = datetime.now(timezone.utc) - timedelta(days=self.config.analysis_window_days)
         outcomes = self.outcome_store.get_recent_outcomes(limit=1000, since=since)
 
         if len(outcomes) < self.config.min_samples_required:
@@ -197,7 +197,7 @@ class ThresholdAdapter:
         import uuid
         proposal = AdjustmentProposal(
             proposal_id=str(uuid.uuid4()),
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             adjustments=adjustments,
             overall_confidence=statistics.mean(a.confidence for a in adjustments),
             expected_impact=self._estimate_impact(adjustments, outcomes),
@@ -256,7 +256,7 @@ class ThresholdAdapter:
 
             return ThresholdAdjustment(
                 adjustment_id=str(uuid.uuid4()),
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 threshold_name="auto_approve_max_score",
                 old_value=current_threshold,
                 new_value=new_threshold,
@@ -288,7 +288,7 @@ class ThresholdAdapter:
 
             return ThresholdAdjustment(
                 adjustment_id=str(uuid.uuid4()),
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 threshold_name="auto_approve_max_score",
                 old_value=current_threshold,
                 new_value=new_threshold,
@@ -340,7 +340,7 @@ class ThresholdAdapter:
 
             return ThresholdAdjustment(
                 adjustment_id=str(uuid.uuid4()),
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 threshold_name="auto_approve_min_confidence",
                 old_value=current_threshold,
                 new_value=new_threshold,
@@ -421,10 +421,10 @@ class ThresholdAdapter:
 
         proposal.status = "approved"
         proposal.approved_by = approved_by
-        proposal.approved_at = datetime.utcnow()
+        proposal.approved_at = datetime.now(timezone.utc)
 
         self.current.version += 1
-        self.current.last_updated = datetime.utcnow()
+        self.current.last_updated = datetime.now(timezone.utc)
 
         logger.info(
             "Threshold adjustments applied",
@@ -491,7 +491,7 @@ class ThresholdAdapter:
     ) -> Dict[str, Any]:
         """Simulate the effect of an adjustment on historical outcomes."""
         if outcomes is None:
-            since = datetime.utcnow() - timedelta(days=self.config.analysis_window_days)
+            since = datetime.now(timezone.utc) - timedelta(days=self.config.analysis_window_days)
             outcomes = self.outcome_store.get_recent_outcomes(limit=1000, since=since)
 
         results = {

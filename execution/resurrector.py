@@ -8,7 +8,7 @@ restore operations, health verification, and rollback procedures.
 import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 import uuid
@@ -154,7 +154,7 @@ class ModuleResurrector(Resurrector):
                 target_instance=request.target_instance_id,
             )
 
-            started_at = datetime.utcnow()
+            started_at = datetime.now(timezone.utc)
             self._active_requests[request.request_id] = request
 
             # Update request status
@@ -179,7 +179,7 @@ class ModuleResurrector(Resurrector):
                     new_instance_id or request.target_instance_id,
                 )
 
-                completed_at = datetime.utcnow()
+                completed_at = datetime.now(timezone.utc)
                 duration = (completed_at - started_at).total_seconds()
 
                 if health_passed:
@@ -225,7 +225,7 @@ class ModuleResurrector(Resurrector):
                     )
 
             except Exception as e:
-                completed_at = datetime.utcnow()
+                completed_at = datetime.now(timezone.utc)
                 duration = (completed_at - started_at).total_seconds()
 
                 request.status = ResurrectionStatus.FAILED
@@ -479,7 +479,7 @@ class KubernetesResurrector(Resurrector):
 
     async def resurrect(self, request: ResurrectionRequest) -> ResurrectionResult:
         """Resurrect a Kubernetes pod."""
-        started_at = datetime.utcnow()
+        started_at = datetime.now(timezone.utc)
 
         try:
             client = await self._get_client()
@@ -507,7 +507,7 @@ class KubernetesResurrector(Resurrector):
                     new_pod = pod
                     break
 
-            completed_at = datetime.utcnow()
+            completed_at = datetime.now(timezone.utc)
             duration = (completed_at - started_at).total_seconds()
 
             if new_pod:
@@ -533,7 +533,7 @@ class KubernetesResurrector(Resurrector):
                 )
 
         except Exception as e:
-            completed_at = datetime.utcnow()
+            completed_at = datetime.now(timezone.utc)
             return ResurrectionResult(
                 request_id=request.request_id,
                 success=False,

@@ -3,7 +3,7 @@ Unit tests for the PatternAnalyzer module.
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 from learning.outcome_store import (
@@ -31,7 +31,7 @@ class TestDetectedPattern:
             pattern_id="pat-001",
             pattern_type=PatternType.FALSE_POSITIVE_SPIKE,
             severity=PatternSeverity.WARNING,
-            detected_at=datetime.utcnow(),
+            detected_at=datetime.now(timezone.utc),
             description="High false positive rate",
             confidence=0.85,
             affected_modules=["service-a", "service-b"],
@@ -45,7 +45,7 @@ class TestDetectedPattern:
 
     def test_to_dict(self):
         """Test serializing pattern to dict."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         pattern = DetectedPattern(
             pattern_id="pat-001",
             pattern_type=PatternType.MODULE_INSTABILITY,
@@ -79,8 +79,8 @@ class TestModuleProfile:
             false_positive_rate=0.3,
             auto_approve_eligible=True,
             risk_trend="stable",
-            last_failure=datetime.utcnow() - timedelta(days=7),
-            last_updated=datetime.utcnow(),
+            last_failure=datetime.now(timezone.utc) - timedelta(days=7),
+            last_updated=datetime.now(timezone.utc),
         )
 
         assert profile.module == "test-service"
@@ -89,7 +89,7 @@ class TestModuleProfile:
 
     def test_to_dict(self):
         """Test serializing profile to dict."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         profile = ModuleProfile(
             module="api-service",
             total_resurrections=50,
@@ -131,7 +131,7 @@ class TestPatternAnalyzer:
             Populate outcomes with given distribution.
             types_dist: dict mapping OutcomeType to count
             """
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
 
             if types_dist is None:
                 types_dist = {OutcomeType.SUCCESS: count}
@@ -200,7 +200,7 @@ class TestPatternAnalyzer:
     def test_detect_module_instability(self, analyzer, populate_outcomes):
         """Test detection of module instability."""
         # Create outcomes with high failure rate for one module
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Add successful outcomes for service-a
         for i in range(5):
@@ -242,7 +242,7 @@ class TestPatternAnalyzer:
 
     def test_detect_auto_approve_degradation(self, analyzer, outcome_store):
         """Test detection of auto-approve accuracy degradation."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Create many auto-approved outcomes with some failures
         for i in range(20):
@@ -293,7 +293,7 @@ class TestPatternAnalyzer:
 
     def test_get_all_module_profiles(self, analyzer, outcome_store):
         """Test getting profiles for all modules."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         modules = ["service-a", "service-b", "service-c"]
         for i, module in enumerate(modules):

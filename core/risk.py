@@ -7,7 +7,7 @@ and multi-factor analysis for resurrection decisions.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 import math
@@ -237,7 +237,7 @@ class AdvancedRiskAssessor(RiskAssessor):
         assessment = RiskAssessment(
             assessment_id=str(uuid.uuid4()),
             kill_id=kill_report.kill_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             risk_level=risk_level,
             risk_score=risk_score,
             confidence=confidence,
@@ -457,7 +457,7 @@ class AdvancedRiskAssessor(RiskAssessor):
         ))
 
         # Time of day (higher risk during business hours)
-        hour = datetime.utcnow().hour
+        hour = datetime.now(timezone.utc).hour
         if 9 <= hour <= 17:  # Business hours
             time_score = 0.6
         elif 6 <= hour <= 9 or 17 <= hour <= 21:  # Transition hours

@@ -9,7 +9,7 @@ import asyncio
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -77,7 +77,7 @@ class QueueItem:
 
     def is_expired(self) -> bool:
         """Check if the item has expired."""
-        return datetime.utcnow() > self.expires_at
+        return datetime.now(timezone.utc) > self.expires_at
 
 
 class ApprovalQueue(ABC):
@@ -195,7 +195,7 @@ class InMemoryApprovalQueue(ApprovalQueue):
                 item_id=proposal.proposal_id,
                 proposal=proposal,
                 status=QueueItemStatus.PENDING,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
                 expires_at=proposal.expires_at,
                 priority=priority,
             )
@@ -250,7 +250,7 @@ class InMemoryApprovalQueue(ApprovalQueue):
             # Update item
             item.status = QueueItemStatus.APPROVED
             item.reviewed_by = approver
-            item.reviewed_at = datetime.utcnow()
+            item.reviewed_at = datetime.now(timezone.utc)
             item.review_notes = notes
 
             # Update proposal
@@ -304,7 +304,7 @@ class InMemoryApprovalQueue(ApprovalQueue):
             # Update item
             item.status = QueueItemStatus.DENIED
             item.reviewed_by = denier
-            item.reviewed_at = datetime.utcnow()
+            item.reviewed_at = datetime.now(timezone.utc)
             item.review_notes = reason
 
             # Update proposal
@@ -379,7 +379,7 @@ class InMemoryApprovalQueue(ApprovalQueue):
 
     async def _check_expirations(self) -> None:
         """Check and expire old items."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         expired = []
 
         for item_id, item in self._queue.items():
@@ -409,7 +409,7 @@ class InMemoryApprovalQueue(ApprovalQueue):
             # Serialize queue items (without full proposal objects)
             state = {
                 "items": [item.to_dict() for item in self._queue.values()],
-                "saved_at": datetime.utcnow().isoformat(),
+                "saved_at": datetime.now(timezone.utc).isoformat(),
             }
 
             with open(self.persistence_path, "w") as f:

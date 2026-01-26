@@ -4,7 +4,7 @@ Unit tests for the ClusterManager module.
 
 import pytest
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, AsyncMock, patch
 
 from integration.cluster_manager import (
@@ -93,7 +93,7 @@ class TestSyncEvent:
             scope=SyncScope.DECISIONS,
             action="create",
             data={"decision_id": "dec-001"},
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
 
         assert event.event_id == "event-001"
@@ -102,7 +102,7 @@ class TestSyncEvent:
 
     def test_to_dict(self):
         """Test serializing SyncEvent to dict."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         event = SyncEvent(
             event_id="event-001",
             source_cluster="cluster-001",
@@ -127,7 +127,7 @@ class TestSyncEvent:
             "scope": "decisions",
             "action": "delete",
             "data": {},
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "version": 2,
         }
 
@@ -269,7 +269,7 @@ class TestInMemoryClusterStore:
             scope=SyncScope.DECISIONS,
             action="create",
             data={"test": True},
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
 
         await store.push_sync_event(event)
@@ -297,7 +297,7 @@ class TestInMemoryClusterStore:
             scope=SyncScope.DECISIONS,
             action="create",
             data={},
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
 
         await store.push_sync_event(event)
@@ -657,7 +657,7 @@ class TestRedisClusterStore:
             scope=SyncScope.DECISIONS,
             action="create",
             data={"test": True},
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
 
         result = await redis_store.push_sync_event(event)
@@ -891,7 +891,7 @@ class TestEtcdClusterStore:
             scope=SyncScope.DECISIONS,
             action="create",
             data={"test": True},
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
 
         result = await etcd_store.push_sync_event(event)

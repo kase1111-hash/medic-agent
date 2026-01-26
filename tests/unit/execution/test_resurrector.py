@@ -5,7 +5,7 @@ Tests for the resurrection execution engine.
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from execution.resurrector import (
@@ -67,7 +67,7 @@ def sample_kill_report():
     """Sample kill report for testing."""
     return KillReport(
         kill_id="kill-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         target_module="test-service",
         target_instance_id="test-001",
         kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -85,7 +85,7 @@ def sample_decision(sample_kill_report):
     return ResurrectionDecision(
         decision_id="decision-001",
         kill_id=sample_kill_report.kill_id,
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         outcome=DecisionOutcome.APPROVE_AUTO,
         risk_level=RiskLevel.LOW,
         risk_score=0.3,
@@ -108,8 +108,8 @@ def approved_request(sample_kill_report, sample_decision):
         target_module=sample_kill_report.target_module,
         target_instance_id=sample_kill_report.target_instance_id,
         status=ResurrectionStatus.APPROVED,
-        created_at=datetime.utcnow(),
-        approved_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
+        approved_at=datetime.now(timezone.utc),
         approved_by="test-user",
     )
 
@@ -232,8 +232,8 @@ class TestResurrectionRequest:
                 target_module=f"service-{i}",
                 target_instance_id=f"instance-{i:03d}",
                 status=ResurrectionStatus.APPROVED,
-                created_at=datetime.utcnow(),
-                approved_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
+                approved_at=datetime.now(timezone.utc),
                 approved_by="test-user",
             )
             requests.append(request)

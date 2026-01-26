@@ -7,7 +7,7 @@ Implements rate limiting, cooldown periods, and safety constraints.
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set
 import uuid
@@ -138,7 +138,7 @@ class AutoResurrectionManager:
             ResurrectionAttempt with result
         """
         attempt_id = str(uuid.uuid4())
-        started_at = datetime.utcnow()
+        started_at = datetime.now(timezone.utc)
 
         with LogContext(
             attempt_id=attempt_id,
@@ -168,16 +168,16 @@ class AutoResurrectionManager:
                 # Create resurrection request
                 request = ResurrectionRequest.from_decision(decision, kill_report)
                 request.approved_by = "auto"
-                request.approved_at = datetime.utcnow()
+                request.approved_at = datetime.now(timezone.utc)
 
                 # Execute resurrection
                 result = await self.resurrector.resurrect(request)
 
-                duration = (datetime.utcnow() - started_at).total_seconds()
+                duration = (datetime.now(timezone.utc) - started_at).total_seconds()
 
                 if result.success:
                     # Update cooldown
-                    self._last_resurrection[kill_report.target_module] = datetime.utcnow()
+                    self._last_resurrection[kill_report.target_module] = datetime.now(timezone.utc)
 
                     # Start monitoring if available
                     if self.monitor and self.config.require_health_check:
@@ -226,7 +226,7 @@ class AutoResurrectionManager:
                     await self._trigger_callbacks(self._on_failure, attempt)
 
             except Exception as e:
-                duration = (datetime.utcnow() - started_at).total_seconds()
+                duration = (datetime.now(timezone.utc) - started_at).total_seconds()
                 attempt = ResurrectionAttempt(
                     attempt_id=attempt_id,
                     kill_id=kill_report.kill_id,
@@ -291,7 +291,7 @@ class AutoResurrectionManager:
 
     def _check_rate_limit(self, module: str) -> tuple[bool, str]:
         """Check global and per-module rate limits."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         hour_ago = now - timedelta(hours=1)
 
         # Clean old attempts
@@ -324,7 +324,7 @@ class AutoResurrectionManager:
             return True, ""
 
         last = self._last_resurrection[module]
-        elapsed = (datetime.utcnow() - last).total_seconds()
+        elapsed = (datetime.now(timezone.utc) - last).total_seconds()
 
         if elapsed < self.config.cooldown_seconds:
             remaining = self.config.cooldown_seconds - elapsed
@@ -396,7 +396,7 @@ class AutoResurrectionManager:
 
     def get_statistics(self) -> Dict[str, Any]:
         """Get auto-resurrection statistics."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         hour_ago = now - timedelta(hours=1)
         day_ago = now - timedelta(days=1)
 

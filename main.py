@@ -20,7 +20,7 @@ import asyncio
 import os
 import signal
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -354,7 +354,7 @@ class MedicAgent:
         await self.initialize()
 
         self._running = True
-        self._start_time = datetime.utcnow()
+        self._start_time = datetime.now(timezone.utc)
         self._shutdown_event.clear()
 
         logger.info("Medic Agent started")
@@ -729,13 +729,18 @@ class MedicAgent:
 
         # Emit event if event bus available
         if self.event_bus:
-            asyncio.create_task(
-                self.event_bus.emit_event(
-                    EventType.ANOMALY_DETECTED,
-                    source="medic.edge_case_manager",
-                    payload=edge_case.to_dict(),
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(
+                    self.event_bus.emit_event(
+                        EventType.ANOMALY_DETECTED,
+                        source="medic.edge_case_manager",
+                        payload=edge_case.to_dict(),
+                    )
                 )
-            )
+            except RuntimeError:
+                # No running event loop - event emission skipped
+                logger.debug("Could not emit edge case event - no running event loop")
 
     async def _on_edge_case_action(self, edge_case: EdgeCase, action: EdgeCaseAction) -> None:
         """Handle required action for edge case."""
@@ -772,16 +777,21 @@ class MedicAgent:
 
         # Emit health event
         if self.event_bus:
-            asyncio.create_task(
-                self.event_bus.emit_event(
-                    EventType.ANOMALY_DETECTED if status == HealthStatus.DEGRADED else EventType.DECISION_MADE,
-                    source="medic.self_monitor",
-                    payload={
-                        "status": status.value,
-                        "previous": previous.value,
-                    },
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(
+                    self.event_bus.emit_event(
+                        EventType.ANOMALY_DETECTED if status == HealthStatus.DEGRADED else EventType.DECISION_MADE,
+                        source="medic.self_monitor",
+                        payload={
+                            "status": status.value,
+                            "previous": previous.value,
+                        },
+                    )
                 )
-            )
+            except RuntimeError:
+                # No running event loop - event emission skipped
+                logger.debug("Could not emit health event - no running event loop")
 
     async def _on_critical_health(self, reason: str) -> None:
         """Handle critical health condition from self-monitor."""
@@ -881,7 +891,7 @@ class MedicAgent:
             decision_id=decision.decision_id,
             kill_id=kill_report.kill_id,
             target_module=kill_report.target_module,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             outcome_type=OutcomeType.UNDETERMINED,  # Will be updated by monitoring
             original_risk_score=decision.risk_score,
             original_confidence=decision.confidence,
@@ -1011,7 +1021,7 @@ class MedicAgent:
             logger.info("Web server stopped")
 
         # Log final stats
-        uptime = (datetime.utcnow() - self._start_time).total_seconds() if self._start_time else 0
+        uptime = (datetime.now(timezone.utc) - self._start_time).total_seconds() if self._start_time else 0
         logger.info(
             "Agent stopped",
             processed_count=self._processed_count,
@@ -1035,7 +1045,7 @@ class MedicAgent:
         """Get current agent status."""
         uptime = None
         if self._start_time:
-            uptime = (datetime.utcnow() - self._start_time).total_seconds()
+            uptime = (datetime.now(timezone.utc) - self._start_time).total_seconds()
 
         return {
             "status": "running" if self._running else "stopped",

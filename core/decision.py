@@ -561,6 +561,6 @@ def create_decision_engine(config: Dict[str, Any]) -> DecisionEngine:
         engine_config.module_criticality_weight = risk_config.get(
             "module_criticality", 0.15
         )
-        engine_config.severity_weight = risk_config.get("time_of_day", 0.10)
+        engine_config.severity_weight = risk_config.get("severity", 0.10)
 
     return ObserverDecisionEngine(engine_config)

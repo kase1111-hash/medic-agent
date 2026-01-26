@@ -8,7 +8,7 @@ path traversal, and resource exhaustion.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional, List, Dict, Any
 import uuid
@@ -300,7 +300,7 @@ class ResurrectionDecision:
         return cls(
             decision_id=str(uuid.uuid4()),
             kill_id=kill_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             outcome=outcome,
             risk_level=risk_level,
             risk_score=risk_score,
@@ -367,7 +367,7 @@ class ResurrectionRequest:
             target_module=kill_report.target_module,
             target_instance_id=kill_report.target_instance_id,
             status=ResurrectionStatus.PENDING,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
 
     def to_dict(self) -> Dict[str, Any]:

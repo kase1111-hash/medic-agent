@@ -3,7 +3,7 @@ Unit tests for core data models.
 """
 
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 
 from core.models import (
     KillReport,
@@ -33,7 +33,7 @@ class TestKillReport:
         with pytest.raises(ValueError):
             KillReport(
                 kill_id="test",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 target_module="test",
                 target_instance_id="test",
                 kill_reason=KillReason.ANOMALY_BEHAVIOR,

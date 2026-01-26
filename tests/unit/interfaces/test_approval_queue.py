@@ -5,7 +5,7 @@ Unit tests for the ApprovalQueue module.
 import pytest
 import asyncio
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import Mock, AsyncMock, patch
 
@@ -53,7 +53,7 @@ class TestQueueItem:
         """Create a sample proposal for testing."""
         kill_report = KillReport(
             kill_id="kill-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="test-service",
             target_instance_id="instance-001",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -67,7 +67,7 @@ class TestQueueItem:
         siem_context = SIEMContextResponse(
             query_id="query-001",
             kill_id="kill-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={"recent_issues": 0},
             false_positive_history=5,
@@ -88,7 +88,7 @@ class TestQueueItem:
 
         return ResurrectionProposal(
             proposal_id="prop-001",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             kill_report=kill_report,
             siem_context=siem_context,
             decision=decision,
@@ -104,7 +104,7 @@ class TestQueueItem:
             suggested_pre_checks=["Check dependencies"],
             suggested_post_checks=["Monitor health"],
             rollback_strategy="Immediate rollback on anomaly",
-            expires_at=datetime.utcnow() + timedelta(hours=24),
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
         )
 
     def test_create_queue_item(self, sample_proposal):
@@ -113,8 +113,8 @@ class TestQueueItem:
             item_id="item-001",
             proposal=sample_proposal,
             status=QueueItemStatus.PENDING,
-            created_at=datetime.utcnow(),
-            expires_at=datetime.utcnow() + timedelta(hours=24),
+            created_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
             priority=50,
         )
 
@@ -125,7 +125,7 @@ class TestQueueItem:
 
     def test_to_dict(self, sample_proposal):
         """Test serializing QueueItem to dict."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         item = QueueItem(
             item_id="item-001",
             proposal=sample_proposal,
@@ -152,8 +152,8 @@ class TestQueueItem:
             item_id="item-001",
             proposal=sample_proposal,
             status=QueueItemStatus.PENDING,
-            created_at=datetime.utcnow(),
-            expires_at=datetime.utcnow() + timedelta(hours=24),
+            created_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
         )
 
         assert item.is_expired() is False
@@ -164,8 +164,8 @@ class TestQueueItem:
             item_id="item-001",
             proposal=sample_proposal,
             status=QueueItemStatus.PENDING,
-            created_at=datetime.utcnow() - timedelta(hours=48),
-            expires_at=datetime.utcnow() - timedelta(hours=24),
+            created_at=datetime.now(timezone.utc) - timedelta(hours=48),
+            expires_at=datetime.now(timezone.utc) - timedelta(hours=24),
         )
 
         assert item.is_expired() is True
@@ -184,7 +184,7 @@ class TestInMemoryApprovalQueue:
         """Create a sample proposal for testing."""
         kill_report = KillReport(
             kill_id="kill-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="test-service",
             target_instance_id="instance-001",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -198,7 +198,7 @@ class TestInMemoryApprovalQueue:
         siem_context = SIEMContextResponse(
             query_id="query-001",
             kill_id="kill-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={"recent_issues": 0},
             false_positive_history=5,
@@ -219,7 +219,7 @@ class TestInMemoryApprovalQueue:
 
         return ResurrectionProposal(
             proposal_id="prop-001",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             kill_report=kill_report,
             siem_context=siem_context,
             decision=decision,
@@ -235,14 +235,14 @@ class TestInMemoryApprovalQueue:
             suggested_pre_checks=["Check dependencies"],
             suggested_post_checks=["Monitor health"],
             rollback_strategy="Immediate rollback on anomaly",
-            expires_at=datetime.utcnow() + timedelta(hours=24),
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
         )
 
     def create_proposal_with_urgency(self, urgency: UrgencyLevel) -> ResurrectionProposal:
         """Helper to create proposals with different urgency levels."""
         kill_report = KillReport(
             kill_id=f"kill-{urgency.value}",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="test-service",
             target_instance_id="instance-001",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -256,7 +256,7 @@ class TestInMemoryApprovalQueue:
         siem_context = SIEMContextResponse(
             query_id=f"query-{urgency.value}",
             kill_id=f"kill-{urgency.value}",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={},
             false_positive_history=0,
@@ -277,7 +277,7 @@ class TestInMemoryApprovalQueue:
 
         return ResurrectionProposal(
             proposal_id=f"prop-{urgency.value}",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             kill_report=kill_report,
             siem_context=siem_context,
             decision=decision,
@@ -293,7 +293,7 @@ class TestInMemoryApprovalQueue:
             suggested_pre_checks=[],
             suggested_post_checks=[],
             rollback_strategy="Rollback",
-            expires_at=datetime.utcnow() + timedelta(hours=24),
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
         )
 
     def test_initialization(self, queue):
@@ -409,7 +409,7 @@ class TestInMemoryApprovalQueue:
     async def test_approve_expired(self, queue, sample_proposal):
         """Test approving expired item raises error."""
         # Set expiration in the past
-        sample_proposal.expires_at = datetime.utcnow() - timedelta(hours=1)
+        sample_proposal.expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
         await queue.enqueue(sample_proposal)
 
         with pytest.raises(ValueError, match="Item has expired"):
@@ -589,7 +589,7 @@ class TestInMemoryApprovalQueuePersistence:
         # Create a simple proposal
         kill_report = KillReport(
             kill_id="kill-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="test-service",
             target_instance_id="instance-001",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -603,7 +603,7 @@ class TestInMemoryApprovalQueuePersistence:
         siem_context = SIEMContextResponse(
             query_id="query-001",
             kill_id="kill-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={},
             false_positive_history=0,
@@ -624,7 +624,7 @@ class TestInMemoryApprovalQueuePersistence:
 
         proposal = ResurrectionProposal(
             proposal_id="prop-001",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             kill_report=kill_report,
             siem_context=siem_context,
             decision=decision,
@@ -640,7 +640,7 @@ class TestInMemoryApprovalQueuePersistence:
             suggested_pre_checks=[],
             suggested_post_checks=[],
             rollback_strategy="Rollback",
-            expires_at=datetime.utcnow() + timedelta(hours=24),
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
         )
 
         await queue.enqueue(proposal)
@@ -658,7 +658,7 @@ class TestInMemoryApprovalQueuePersistence:
 
         kill_report = KillReport(
             kill_id="kill-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="test-service",
             target_instance_id="instance-001",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -672,7 +672,7 @@ class TestInMemoryApprovalQueuePersistence:
         siem_context = SIEMContextResponse(
             query_id="query-001",
             kill_id="kill-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={},
             false_positive_history=0,
@@ -693,7 +693,7 @@ class TestInMemoryApprovalQueuePersistence:
 
         proposal = ResurrectionProposal(
             proposal_id="prop-001",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             kill_report=kill_report,
             siem_context=siem_context,
             decision=decision,
@@ -709,7 +709,7 @@ class TestInMemoryApprovalQueuePersistence:
             suggested_pre_checks=[],
             suggested_post_checks=[],
             rollback_strategy="Rollback",
-            expires_at=datetime.utcnow() + timedelta(hours=24),
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
         )
 
         await queue1.enqueue(proposal)
@@ -768,7 +768,7 @@ class TestExpirationHandling:
 
         kill_report = KillReport(
             kill_id="kill-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="test-service",
             target_instance_id="instance-001",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -782,7 +782,7 @@ class TestExpirationHandling:
         siem_context = SIEMContextResponse(
             query_id="query-001",
             kill_id="kill-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={},
             false_positive_history=0,
@@ -804,7 +804,7 @@ class TestExpirationHandling:
         # Create expired proposal
         proposal = ResurrectionProposal(
             proposal_id="prop-expired",
-            created_at=datetime.utcnow() - timedelta(hours=48),
+            created_at=datetime.now(timezone.utc) - timedelta(hours=48),
             kill_report=kill_report,
             siem_context=siem_context,
             decision=decision,
@@ -820,7 +820,7 @@ class TestExpirationHandling:
             suggested_pre_checks=[],
             suggested_post_checks=[],
             rollback_strategy="Rollback",
-            expires_at=datetime.utcnow() - timedelta(hours=24),  # Already expired
+            expires_at=datetime.now(timezone.utc) - timedelta(hours=24),  # Already expired
         )
 
         await queue.enqueue(proposal)
@@ -842,7 +842,7 @@ class TestExpirationHandling:
 
         kill_report = KillReport(
             kill_id="kill-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="test-service",
             target_instance_id="instance-001",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -856,7 +856,7 @@ class TestExpirationHandling:
         siem_context = SIEMContextResponse(
             query_id="query-001",
             kill_id="kill-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={},
             false_positive_history=0,
@@ -877,7 +877,7 @@ class TestExpirationHandling:
 
         proposal = ResurrectionProposal(
             proposal_id="prop-expired",
-            created_at=datetime.utcnow() - timedelta(hours=48),
+            created_at=datetime.now(timezone.utc) - timedelta(hours=48),
             kill_report=kill_report,
             siem_context=siem_context,
             decision=decision,
@@ -893,7 +893,7 @@ class TestExpirationHandling:
             suggested_pre_checks=[],
             suggested_post_checks=[],
             rollback_strategy="Rollback",
-            expires_at=datetime.utcnow() - timedelta(hours=24),
+            expires_at=datetime.now(timezone.utc) - timedelta(hours=24),
         )
 
         await queue.enqueue(proposal)

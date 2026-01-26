@@ -4,7 +4,7 @@ Pytest configuration and shared fixtures for Medic Agent tests.
 
 import pytest
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 import uuid
 
@@ -37,7 +37,7 @@ def sample_kill_report() -> KillReport:
     """Standard kill report for testing."""
     return KillReport(
         kill_id=str(uuid.uuid4()),
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         target_module="test-service",
         target_instance_id="instance-001",
         kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -55,7 +55,7 @@ def low_risk_kill_report() -> KillReport:
     """Kill report that should result in low risk assessment."""
     return KillReport(
         kill_id=str(uuid.uuid4()),
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         target_module="low-risk-service",
         target_instance_id="instance-002",
         kill_reason=KillReason.RESOURCE_EXHAUSTION,
@@ -73,7 +73,7 @@ def high_risk_kill_report() -> KillReport:
     """Kill report for high risk threat."""
     return KillReport(
         kill_id=str(uuid.uuid4()),
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         target_module="critical-service",
         target_instance_id="instance-003",
         kill_reason=KillReason.THREAT_DETECTED,
@@ -92,7 +92,7 @@ def sample_siem_response(sample_kill_report: KillReport) -> SIEMContextResponse:
     return SIEMContextResponse(
         query_id=str(uuid.uuid4()),
         kill_id=sample_kill_report.kill_id,
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         threat_indicators=[],
         historical_behavior={
             "avg_cpu_usage": 45.0,
@@ -113,7 +113,7 @@ def low_risk_siem_response(low_risk_kill_report: KillReport) -> SIEMContextRespo
     return SIEMContextResponse(
         query_id=str(uuid.uuid4()),
         kill_id=low_risk_kill_report.kill_id,
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         threat_indicators=[],
         historical_behavior={},
         false_positive_history=5,  # Many false positives
@@ -130,14 +130,14 @@ def high_risk_siem_response(high_risk_kill_report: KillReport) -> SIEMContextRes
     return SIEMContextResponse(
         query_id=str(uuid.uuid4()),
         kill_id=high_risk_kill_report.kill_id,
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         threat_indicators=[
             ThreatIndicator(
                 indicator_type="malware",
                 value="trojan.generic",
                 threat_score=0.92,
                 source="threat_intel",
-                last_seen=datetime.utcnow(),
+                last_seen=datetime.now(timezone.utc),
                 tags=["malware", "trojan"],
             ),
         ],

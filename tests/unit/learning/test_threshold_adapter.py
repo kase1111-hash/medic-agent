@@ -3,7 +3,7 @@ Unit tests for the ThresholdAdapter module.
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 
 from learning.outcome_store import (
@@ -30,7 +30,7 @@ class TestThresholdAdjustment:
         """Test creating a ThresholdAdjustment instance."""
         adj = ThresholdAdjustment(
             adjustment_id="adj-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threshold_name="auto_approve_max_score",
             old_value=0.4,
             new_value=0.35,
@@ -46,7 +46,7 @@ class TestThresholdAdjustment:
 
     def test_to_dict(self):
         """Test serializing adjustment to dict."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         adj = ThresholdAdjustment(
             adjustment_id="adj-001",
             timestamp=now,
@@ -74,7 +74,7 @@ class TestAdjustmentProposal:
         """Test creating an AdjustmentProposal instance."""
         adj = ThresholdAdjustment(
             adjustment_id="adj-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threshold_name="auto_approve_max_score",
             old_value=0.4,
             new_value=0.35,
@@ -86,7 +86,7 @@ class TestAdjustmentProposal:
 
         proposal = AdjustmentProposal(
             proposal_id="prop-001",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             adjustments=[adj],
             overall_confidence=0.8,
             expected_impact={"affected_decisions": 10},
@@ -98,7 +98,7 @@ class TestAdjustmentProposal:
 
     def test_to_dict(self):
         """Test serializing proposal to dict."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         adj = ThresholdAdjustment(
             adjustment_id="adj-001",
             timestamp=now,
@@ -174,7 +174,7 @@ class TestThresholdAdapter:
     def populate_outcomes(self, outcome_store):
         """Helper to populate outcomes."""
         def _populate(success_rate=0.9, auto_approved=True, count=20):
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             success_count = int(count * success_rate)
 
             for i in range(count):
@@ -325,7 +325,7 @@ class TestThresholdAdapter:
 
         adj = ThresholdAdjustment(
             adjustment_id="sim-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threshold_name="auto_approve_max_score",
             old_value=0.5,
             new_value=0.3,

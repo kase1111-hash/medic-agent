@@ -7,7 +7,7 @@ Based on error patterns defined in the technical specification.
 
 from enum import Enum
 from typing import Any, Callable, List, Optional, TypeVar
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 import asyncio
 import random
@@ -49,7 +49,7 @@ class MedicError(Exception):
         self.category = category
         self.recoverable = recoverable
         self.context = context or {}
-        self.timestamp = datetime.utcnow()
+        self.timestamp = datetime.now(timezone.utc)
         super().__init__(self.message)
 
     def to_dict(self) -> dict:
@@ -400,7 +400,7 @@ class CircuitBreaker:
         if self.state == CircuitState.OPEN:
             # Check if recovery timeout has passed
             if self.last_failure_time:
-                elapsed = (datetime.utcnow() - self.last_failure_time).total_seconds()
+                elapsed = (datetime.now(timezone.utc) - self.last_failure_time).total_seconds()
                 if elapsed >= self.recovery_timeout_seconds:
                     self._transition_to_half_open()
                     return True
@@ -423,7 +423,7 @@ class CircuitBreaker:
     def record_failure(self) -> None:
         """Record failed call."""
         self.failure_count += 1
-        self.last_failure_time = datetime.utcnow()
+        self.last_failure_time = datetime.now(timezone.utc)
 
         if self.state == CircuitState.HALF_OPEN:
             self._transition_to_open()

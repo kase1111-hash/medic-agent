@@ -4,7 +4,7 @@ Unit tests for the SelfMonitor module.
 
 import pytest
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 
 from integration.self_monitor import (
@@ -41,7 +41,7 @@ class TestMetric:
 
     def test_create_metric(self):
         """Test creating a Metric instance."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         metric = Metric(
             metric_type=MetricType.DECISION_LATENCY,
             value=150.5,
@@ -58,7 +58,7 @@ class TestMetric:
 
     def test_to_dict(self):
         """Test serializing metric to dict."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         metric = Metric(
             metric_type=MetricType.ERROR_RATE,
             value=0.03456,
@@ -81,7 +81,7 @@ class TestHealthCheck:
 
     def test_create_health_check(self):
         """Test creating a HealthCheck instance."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         metric = Metric(
             metric_type=MetricType.CPU_USAGE,
             value=45.0,
@@ -107,7 +107,7 @@ class TestHealthCheck:
 
     def test_to_dict(self):
         """Test serializing health check to dict."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         metric = Metric(
             metric_type=MetricType.MEMORY_USAGE,
             value=65.0,
@@ -216,7 +216,7 @@ class TestSelfMonitor:
     def test_trim_history(self, monitor):
         """Test that old history is trimmed."""
         # Add old latency
-        old_time = datetime.utcnow() - timedelta(hours=2)
+        old_time = datetime.now(timezone.utc) - timedelta(hours=2)
         monitor._latencies.append((old_time, 100.0))
         monitor._decisions.append(old_time)
         monitor._errors.append(old_time)
@@ -268,7 +268,7 @@ class TestSelfMonitor:
         """Test error rate check with healthy values."""
         # 10 decisions, 0 errors
         for _ in range(10):
-            monitor._decisions.append(datetime.utcnow())
+            monitor._decisions.append(datetime.now(timezone.utc))
 
         metric = monitor._check_error_rate()
 
@@ -277,7 +277,7 @@ class TestSelfMonitor:
 
     def test_check_error_rate_degraded(self, monitor_strict_thresholds):
         """Test error rate check with degraded values."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # 10 decisions, 3 errors (30% > 2% warning)
         for _ in range(10):
@@ -406,7 +406,7 @@ class TestSelfMonitor:
 
     def test_determine_overall_status_healthy(self, monitor):
         """Test overall status determination with all healthy."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         metrics = [
             Metric(MetricType.DECISION_LATENCY, 100, "ms", now, HealthStatus.HEALTHY, 500, 2000),
             Metric(MetricType.ERROR_RATE, 0.01, "ratio", now, HealthStatus.HEALTHY, 0.05, 0.15),
@@ -418,7 +418,7 @@ class TestSelfMonitor:
 
     def test_determine_overall_status_degraded(self, monitor):
         """Test overall status determination with degraded."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         metrics = [
             Metric(MetricType.DECISION_LATENCY, 600, "ms", now, HealthStatus.DEGRADED, 500, 2000),
             Metric(MetricType.ERROR_RATE, 0.01, "ratio", now, HealthStatus.HEALTHY, 0.05, 0.15),
@@ -430,7 +430,7 @@ class TestSelfMonitor:
 
     def test_determine_overall_status_critical(self, monitor):
         """Test overall status determination with critical."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         metrics = [
             Metric(MetricType.DECISION_LATENCY, 100, "ms", now, HealthStatus.HEALTHY, 500, 2000),
             Metric(MetricType.MEMORY_USAGE, 95, "percent", now, HealthStatus.CRITICAL, 70, 90),
@@ -490,7 +490,7 @@ class TestSelfMonitor:
         callback = AsyncMock()
         monitor.on_critical = callback
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         critical_check = HealthCheck(
             check_id="check-001",
             timestamp=now,
@@ -508,7 +508,7 @@ class TestSelfMonitor:
     @patch("gc.collect")
     async def test_attempt_remediation_memory(self, mock_gc, monitor):
         """Test auto-remediation for memory issues."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         metrics = [
             Metric(MetricType.MEMORY_USAGE, 95, "percent", now, HealthStatus.CRITICAL, 70, 90),
         ]
@@ -530,7 +530,7 @@ class TestSelfMonitor:
     async def test_remediation_rate_limiting(self, monitor):
         """Test that remediation is rate limited."""
         # Exhaust remediation limit
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         for _ in range(monitor.config.max_auto_remediations_per_hour):
             monitor._remediations.append(now)
 

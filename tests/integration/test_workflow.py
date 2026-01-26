@@ -6,7 +6,7 @@ Tests the interaction between components.
 """
 
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from core.models import KillReport, KillReason, Severity, DecisionOutcome, RiskLevel
@@ -115,7 +115,7 @@ def low_risk_kill_report():
     """Kill report representing low risk."""
     return KillReport(
         kill_id="integration-low-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         target_module="cache-service",
         target_instance_id="cache-001",
         kill_reason=KillReason.RESOURCE_EXHAUSTION,
@@ -134,7 +134,7 @@ def low_risk_siem_context():
     return SIEMContextResponse(
         query_id="integration-query-low-001",
         kill_id="integration-low-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         threat_indicators=[],
         historical_behavior={"stability_score": 0.95},
         false_positive_history=5,
@@ -152,7 +152,7 @@ def high_risk_kill_report():
     """Kill report representing high risk."""
     return KillReport(
         kill_id="integration-high-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         target_module="auth-service",
         target_instance_id="auth-001",
         kill_reason=KillReason.THREAT_DETECTED,
@@ -171,14 +171,14 @@ def high_risk_siem_context():
     return SIEMContextResponse(
         query_id="integration-query-high-001",
         kill_id="integration-high-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         threat_indicators=[
             ThreatIndicator(
                 indicator_type="ip",
                 value="192.168.1.100",
                 threat_score=0.85,
                 source="threat_intel",
-                last_seen=datetime.utcnow(),
+                last_seen=datetime.now(timezone.utc),
                 tags=["c2", "apt"],
             ),
         ],
@@ -271,7 +271,7 @@ class TestLowRiskWorkflow:
         request = ResurrectionRequest.from_decision(decision, low_risk_kill_report)
         request.status = ResurrectionStatus.APPROVED
         request.approved_by = "auto"
-        request.approved_at = datetime.utcnow()
+        request.approved_at = datetime.now(timezone.utc)
 
         # Step 4: Execute resurrection
         result = await resurrector.resurrect(request)
@@ -435,7 +435,7 @@ class TestMonitoringWorkflow:
         request = ResurrectionRequest.from_decision(decision, low_risk_kill_report)
         request.status = ResurrectionStatus.APPROVED
         request.approved_by = "test-user"
-        request.approved_at = datetime.utcnow()
+        request.approved_at = datetime.now(timezone.utc)
 
         # Resurrect
         await resurrector.resurrect(request)
@@ -483,7 +483,7 @@ class TestRollbackWorkflow:
         request = ResurrectionRequest.from_decision(decision, low_risk_kill_report)
         request.status = ResurrectionStatus.APPROVED
         request.approved_by = "test-user"
-        request.approved_at = datetime.utcnow()
+        request.approved_at = datetime.now(timezone.utc)
 
         # Resurrect
         result = await resurrector.resurrect(request)
@@ -521,7 +521,7 @@ class TestCriticalModuleWorkflow:
         low_risk_context = SIEMContextResponse(
             query_id="critical-query-001",
             kill_id=high_risk_kill_report.kill_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={},
             false_positive_history=10,
@@ -566,7 +566,7 @@ class TestEdgeCases:
         request = ResurrectionRequest.from_decision(decision, low_risk_kill_report)
         request.status = ResurrectionStatus.APPROVED
         request.approved_by = "test-user"
-        request.approved_at = datetime.utcnow()
+        request.approved_at = datetime.now(timezone.utc)
 
         # First resurrection
         result1 = await resurrector.resurrect(request)

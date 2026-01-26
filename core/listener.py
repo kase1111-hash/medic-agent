@@ -8,7 +8,7 @@ Supports multiple transport backends (Redis, RabbitMQ, etc.).
 import asyncio
 import json
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import AsyncIterator, Callable, Dict, List, Optional, Any
 import uuid
 
@@ -314,7 +314,7 @@ class MockSmithListener(KillReportListener):
 
             kill_report = KillReport(
                 kill_id=str(uuid.uuid4()),
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 target_module=random.choice(self.modules),
                 target_instance_id=f"instance-{random.randint(1, 100):03d}",
                 kill_reason=random.choice(list(KillReason)),

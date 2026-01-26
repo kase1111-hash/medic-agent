@@ -7,7 +7,7 @@ and trigger learning system updates.
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
@@ -147,7 +147,7 @@ class FeedbackProcessor:
             feedback_type=feedback_type,
             source=source,
             submitted_by=submitted_by,
-            submitted_at=datetime.utcnow(),
+            submitted_at=datetime.now(timezone.utc),
             value=value,
             comment=comment,
         )
@@ -199,7 +199,7 @@ class FeedbackProcessor:
                 self.outcome_store.update_outcome(feedback.outcome_id, updates)
 
             feedback.processed = True
-            feedback.processed_at = datetime.utcnow()
+            feedback.processed_at = datetime.now(timezone.utc)
 
             self._feedback_history.append(feedback)
             del self._pending_feedback[feedback_id]

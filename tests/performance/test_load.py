@@ -8,7 +8,7 @@ Run with: pytest tests/performance/ -v --benchmark-only
 """
 
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 import time
 import asyncio
@@ -32,7 +32,7 @@ class TestDecisionThroughput:
         return [
             KillReport(
                 kill_id=str(uuid.uuid4()),
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 target_module=f"service-{i}",
                 target_instance_id=f"instance-{i}",
                 kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -51,7 +51,7 @@ class TestDecisionThroughput:
         return SIEMContextResponse(
             query_id=str(uuid.uuid4()),
             kill_id=kill_reports[0].kill_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={},
             false_positive_history=2,
@@ -92,7 +92,7 @@ class TestDecisionThroughput:
         for i in range(1000):
             report = KillReport(
                 kill_id=str(uuid.uuid4()),
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 target_module=f"service-{i}",
                 target_instance_id=f"instance-{i}",
                 kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -130,7 +130,7 @@ class TestMemoryUsage:
         siem_response = SIEMContextResponse(
             query_id=str(uuid.uuid4()),
             kill_id="test",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={},
             false_positive_history=0,
@@ -147,7 +147,7 @@ class TestMemoryUsage:
         for i in range(1000):
             report = KillReport(
                 kill_id=str(uuid.uuid4()),
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 target_module=f"service-{i}",
                 target_instance_id=f"instance-{i}",
                 kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -259,7 +259,7 @@ class TestDatabasePerformance:
                 request_id=str(uuid.uuid4()),
                 kill_id=str(uuid.uuid4()),
                 target_module=f"service-{i}",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 outcome=ResurrectionOutcome.SUCCESS,
                 monitoring_duration_minutes=30,
                 anomalies_detected=0,
@@ -301,7 +301,7 @@ class TestDatabasePerformance:
                 request_id=str(uuid.uuid4()),
                 kill_id=str(uuid.uuid4()),
                 target_module=module_name,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 outcome=ResurrectionOutcome.SUCCESS if i % 2 == 0 else ResurrectionOutcome.FAILURE,
                 monitoring_duration_minutes=30,
                 anomalies_detected=0,
@@ -335,7 +335,7 @@ class TestAPIPerformance:
         # Simulate health check logic
         health = {
             "status": "healthy",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "checks": {"redis": "ok", "siem": "ok"},
         }
 

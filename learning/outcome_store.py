@@ -9,7 +9,7 @@ import json
 import sqlite3
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -487,8 +487,8 @@ class SQLiteOutcomeStore(OutcomeStore):
             params,
         ).fetchone()
 
-        period_start = datetime.fromisoformat(date_range["min_ts"]) if date_range["min_ts"] else datetime.utcnow()
-        period_end = datetime.fromisoformat(date_range["max_ts"]) if date_range["max_ts"] else datetime.utcnow()
+        period_start = datetime.fromisoformat(date_range["min_ts"]) if date_range["min_ts"] else datetime.now(timezone.utc)
+        period_end = datetime.fromisoformat(date_range["max_ts"]) if date_range["max_ts"] else datetime.now(timezone.utc)
 
         total = sum(type_counts.values())
 
@@ -709,7 +709,7 @@ class InMemoryOutcomeStore(OutcomeStore):
         ]
 
         if not outcomes:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             return OutcomeStatistics(
                 total_outcomes=0,
                 success_count=0,

@@ -4,7 +4,7 @@ Unit tests for the VetoProtocol module.
 
 import pytest
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, AsyncMock, MagicMock
 
 from integration.veto_protocol import (
@@ -43,7 +43,7 @@ class TestVetoRequest:
 
     def test_create_request(self):
         """Test creating a VetoRequest instance."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         request = VetoRequest(
             request_id="req-001",
             module="test-service",
@@ -63,7 +63,7 @@ class TestVetoRequest:
 
     def test_to_dict(self):
         """Test serializing request to dict."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         request = VetoRequest(
             request_id="req-001",
             module="api-service",
@@ -201,7 +201,7 @@ class TestVetoProtocol:
     @pytest.fixture
     def sample_request(self):
         """Create a sample veto request."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         return VetoRequest(
             request_id="req-001",
             module="test-service",
@@ -232,7 +232,7 @@ class TestVetoProtocol:
     @pytest.mark.asyncio
     async def test_handle_veto_request_high_confidence(self, protocol):
         """Test that high Smith confidence results in approval."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         request = VetoRequest(
             request_id="req-high-conf",
             module="test-service",
@@ -257,14 +257,14 @@ class TestVetoProtocol:
         # Mock outcome store with FP history
         mock_outcome = MagicMock()
         mock_outcome.outcome_type.value = "false_positive"
-        mock_outcome.timestamp = datetime.utcnow()
+        mock_outcome.timestamp = datetime.now(timezone.utc)
 
         mock_store = MagicMock()
         mock_store.get_outcomes_by_module.return_value = [mock_outcome] * 5
 
         protocol.outcome_store = mock_store
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         request = VetoRequest(
             request_id="req-fp-history",
             module="known-fp-service",
@@ -287,7 +287,7 @@ class TestVetoProtocol:
     @pytest.mark.asyncio
     async def test_handle_veto_request_with_critical_dependencies(self, protocol):
         """Test that critical dependencies affect decision."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         request = VetoRequest(
             request_id="req-deps",
             module="critical-service",
@@ -310,19 +310,19 @@ class TestVetoProtocol:
     async def test_rate_limiting_global(self, protocol):
         """Test global rate limiting for vetos."""
         # Exhaust veto limit
-        protocol._vetos_this_hour = [datetime.utcnow()] * protocol.config.max_vetos_per_hour
+        protocol._vetos_this_hour = [datetime.now(timezone.utc)] * protocol.config.max_vetos_per_hour
 
         # Mock high FP history to trigger potential veto
         mock_outcome = MagicMock()
         mock_outcome.outcome_type.value = "false_positive"
-        mock_outcome.timestamp = datetime.utcnow()
+        mock_outcome.timestamp = datetime.now(timezone.utc)
 
         mock_store = MagicMock()
         mock_store.get_outcomes_by_module.return_value = [mock_outcome] * 10
 
         protocol.outcome_store = mock_store
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         request = VetoRequest(
             request_id="req-limited",
             module="test-service",
@@ -346,19 +346,19 @@ class TestVetoProtocol:
     async def test_rate_limiting_per_module(self, protocol):
         """Test per-module cooldown."""
         module = "cooldown-service"
-        protocol._last_veto_by_module[module] = datetime.utcnow()
+        protocol._last_veto_by_module[module] = datetime.now(timezone.utc)
 
         # Mock FP history
         mock_outcome = MagicMock()
         mock_outcome.outcome_type.value = "false_positive"
-        mock_outcome.timestamp = datetime.utcnow()
+        mock_outcome.timestamp = datetime.now(timezone.utc)
 
         mock_store = MagicMock()
         mock_store.get_outcomes_by_module.return_value = [mock_outcome] * 10
 
         protocol.outcome_store = mock_store
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         request = VetoRequest(
             request_id="req-cooldown",
             module=module,
@@ -424,7 +424,7 @@ class TestVetoProtocol:
         """Test that history is limited to prevent memory issues."""
         # Create many requests
         for i in range(600):
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             request = VetoRequest(
                 request_id=f"req-{i}",
                 module="test-service",
@@ -451,7 +451,7 @@ class TestVetoProtocol:
         """Test getting veto statistics."""
         # Create some requests
         for i in range(5):
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             request = VetoRequest(
                 request_id=f"req-stats-{i}",
                 module="test-service",
@@ -483,7 +483,7 @@ class TestVetoProtocol:
     async def test_get_history(self, protocol):
         """Test getting veto history."""
         for i in range(3):
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             request = VetoRequest(
                 request_id=f"req-hist-{i}",
                 module="test-service",
@@ -509,7 +509,7 @@ class TestVetoProtocol:
         """Test getting filtered veto history."""
         # Create requests that will be approved (high Smith confidence)
         for i in range(3):
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             request = VetoRequest(
                 request_id=f"req-filt-{i}",
                 module="test-service",
@@ -589,7 +589,7 @@ class TestVetoDecisionLogic:
         """Create protocol with mocked dependencies."""
         mock_outcome = MagicMock()
         mock_outcome.outcome_type.value = "false_positive"
-        mock_outcome.timestamp = datetime.utcnow()
+        mock_outcome.timestamp = datetime.now(timezone.utc)
 
         mock_store = MagicMock()
         mock_store.get_outcomes_by_module.return_value = [mock_outcome] * 5
@@ -602,7 +602,7 @@ class TestVetoDecisionLogic:
         """Test that multiple veto reasons trigger a veto."""
         protocol = protocol_with_mocks
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         request = VetoRequest(
             request_id="req-multi-reason",
             module="test-service",
@@ -630,10 +630,10 @@ class TestVetoDecisionLogic:
         # Set FP history to exactly min_fp_history_for_veto (3) - one veto reason
         mock_outcome = MagicMock()
         mock_outcome.outcome_type.value = "false_positive"
-        mock_outcome.timestamp = datetime.utcnow()
+        mock_outcome.timestamp = datetime.now(timezone.utc)
         protocol.outcome_store.get_outcomes_by_module.return_value = [mock_outcome] * 3
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         request = VetoRequest(
             request_id="req-single-reason",
             module="test-service",
@@ -659,7 +659,7 @@ class TestVetoDecisionLogic:
         """Test conditional approval case."""
         protocol = VetoProtocol()
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         request = VetoRequest(
             request_id="req-conditional",
             module="test-service",
