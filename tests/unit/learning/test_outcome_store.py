@@ -5,7 +5,7 @@ Unit tests for the OutcomeStore module.
 import pytest
 import tempfile
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from learning.outcome_store import (
@@ -30,7 +30,7 @@ class TestResurrectionOutcome:
             decision_id="dec-001",
             kill_id="kill-001",
             target_module="test-service",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             outcome_type=OutcomeType.SUCCESS,
             original_risk_score=0.3,
             original_confidence=0.9,
@@ -44,7 +44,7 @@ class TestResurrectionOutcome:
 
     def test_to_dict(self):
         """Test serializing ResurrectionOutcome to dict."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         outcome = ResurrectionOutcome(
             outcome_id="out-001",
             decision_id="dec-001",
@@ -108,7 +108,7 @@ class TestInMemoryOutcomeStore:
             decision_id="dec-001",
             kill_id="kill-001",
             target_module="test-service",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             outcome_type=OutcomeType.SUCCESS,
             original_risk_score=0.25,
             original_confidence=0.9,
@@ -140,7 +140,7 @@ class TestInMemoryOutcomeStore:
                 decision_id=f"dec-{i}",
                 kill_id=f"kill-{i}",
                 target_module="service-a" if i < 3 else "service-b",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 outcome_type=OutcomeType.SUCCESS,
                 original_risk_score=0.2,
                 original_confidence=0.9,
@@ -165,7 +165,7 @@ class TestInMemoryOutcomeStore:
                 decision_id=f"dec-{i}",
                 kill_id=f"kill-{i}",
                 target_module="service",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 outcome_type=ot,
                 original_risk_score=0.3,
                 original_confidence=0.8,
@@ -182,7 +182,7 @@ class TestInMemoryOutcomeStore:
 
     def test_get_recent_outcomes(self, store):
         """Test getting recent outcomes."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         for i in range(10):
             outcome = ResurrectionOutcome(
@@ -222,7 +222,7 @@ class TestInMemoryOutcomeStore:
                 decision_id=f"dec-{i}",
                 kill_id=f"kill-{i}",
                 target_module="service",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 outcome_type=ot,
                 original_risk_score=risk,
                 original_confidence=0.8,
@@ -279,7 +279,7 @@ class TestSQLiteOutcomeStore:
             decision_id="dec-001",
             kill_id="kill-001",
             target_module="test-service",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             outcome_type=OutcomeType.SUCCESS,
             original_risk_score=0.25,
             original_confidence=0.9,
@@ -307,7 +307,7 @@ class TestSQLiteOutcomeStore:
                 decision_id=f"dec-{i}",
                 kill_id=f"kill-{i}",
                 target_module="target-module" if i < 3 else "other-module",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 outcome_type=OutcomeType.SUCCESS,
                 original_risk_score=0.2,
                 original_confidence=0.9,
@@ -321,7 +321,7 @@ class TestSQLiteOutcomeStore:
 
     def test_get_outcomes_with_since_filter(self, store):
         """Test getting outcomes with date filter."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         for i in range(5):
             outcome = ResurrectionOutcome(
@@ -359,7 +359,7 @@ class TestSQLiteOutcomeStore:
                 decision_id=f"dec-{i}",
                 kill_id=f"kill-{i}",
                 target_module="service",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 outcome_type=ot,
                 original_risk_score=0.3,
                 original_confidence=0.8,
@@ -416,7 +416,7 @@ class TestSQLiteOutcomeStore:
                 decision_id=f"dec-{i}",
                 kill_id=f"kill-{i}",
                 target_module="target-service",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 outcome_type=OutcomeType.SUCCESS if i < 4 else OutcomeType.FAILURE,
                 original_risk_score=0.2 + i * 0.1,
                 original_confidence=0.9,

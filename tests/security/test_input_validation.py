@@ -6,7 +6,7 @@ Ensures malicious or malformed input is properly handled.
 """
 
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 from core.models import KillReport, KillReason, Severity, SIEMContextResponse
@@ -21,7 +21,7 @@ class TestKillReportValidation:
         try:
             report = KillReport(
                 kill_id="",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 target_module="test",
                 target_instance_id="instance",
                 kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -42,7 +42,7 @@ class TestKillReportValidation:
         try:
             report = KillReport(
                 kill_id=None,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 target_module="test",
                 target_instance_id="instance",
                 kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -63,7 +63,7 @@ class TestKillReportValidation:
         with pytest.raises((ValueError, AssertionError)):
             KillReport(
                 kill_id=str(uuid.uuid4()),
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 target_module="test",
                 target_instance_id="instance",
                 kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -79,7 +79,7 @@ class TestKillReportValidation:
         with pytest.raises((ValueError, AssertionError)):
             KillReport(
                 kill_id=str(uuid.uuid4()),
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 target_module="test",
                 target_instance_id="instance",
                 kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -95,7 +95,7 @@ class TestKillReportValidation:
         # Should accept alphanumeric, underscore, hyphen, dot
         report = KillReport(
             kill_id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="test-service_v2.0",  # Valid with special chars
             target_instance_id="instance-001",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -114,7 +114,7 @@ class TestKillReportValidation:
         with pytest.raises(ValidationError) as exc_info:
             KillReport(
                 kill_id=str(uuid.uuid4()),
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 target_module=long_name,
                 target_instance_id="instance",
                 kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -130,7 +130,7 @@ class TestKillReportValidation:
         """Unicode characters in evidence should be handled safely."""
         report = KillReport(
             kill_id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="test",
             target_instance_id="instance",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -152,7 +152,7 @@ class TestSIEMResponseValidation:
             response = SIEMContextResponse(
                 query_id=str(uuid.uuid4()),
                 kill_id=str(uuid.uuid4()),
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 threat_indicators=[],
                 historical_behavior={},
                 false_positive_history=0,
@@ -173,7 +173,7 @@ class TestSIEMResponseValidation:
             response = SIEMContextResponse(
                 query_id=str(uuid.uuid4()),
                 kill_id=str(uuid.uuid4()),
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 threat_indicators=[],
                 historical_behavior={},
                 false_positive_history=-5,  # Invalid
@@ -198,7 +198,7 @@ class TestInjectionPrevention:
         with pytest.raises(ValidationError) as exc_info:
             KillReport(
                 kill_id=str(uuid.uuid4()),
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 target_module=malicious_name,
                 target_instance_id="instance",
                 kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -221,7 +221,7 @@ class TestInjectionPrevention:
         ]
         report = KillReport(
             kill_id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="test",
             target_instance_id="instance",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -240,7 +240,7 @@ class TestInjectionPrevention:
         with pytest.raises(ValidationError) as exc_info:
             KillReport(
                 kill_id=str(uuid.uuid4()),
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 target_module=traversal_name,
                 target_instance_id="instance",
                 kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -267,7 +267,7 @@ class TestJSONParsingSecurity:
 
         report = KillReport(
             kill_id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="test",
             target_instance_id="instance",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -288,7 +288,7 @@ class TestJSONParsingSecurity:
         with pytest.raises(ValidationError) as exc_info:
             KillReport(
                 kill_id=str(uuid.uuid4()),
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 target_module="test",
                 target_instance_id="instance",
                 kill_reason=KillReason.ANOMALY_BEHAVIOR,

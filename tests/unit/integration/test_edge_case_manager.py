@@ -4,7 +4,7 @@ Unit tests for the EdgeCaseManager module.
 
 import pytest
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, AsyncMock
 
 from integration.edge_case_manager import (
@@ -50,7 +50,7 @@ class TestEdgeCase:
 
     def test_create_edge_case(self):
         """Test creating an EdgeCase instance."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         ec = EdgeCase(
             edge_case_id="ec-001",
             edge_case_type=EdgeCaseType.RAPID_REPEATED_KILLS,
@@ -69,7 +69,7 @@ class TestEdgeCase:
 
     def test_to_dict(self):
         """Test serializing edge case to dict."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         ec = EdgeCase(
             edge_case_id="ec-001",
             edge_case_type=EdgeCaseType.CASCADING_FAILURE,
@@ -151,8 +151,8 @@ class TestEdgeCaseManager:
     ) -> KillReport:
         """Create a sample kill report."""
         return KillReport(
-            kill_id=f"kill-{module}-{datetime.utcnow().timestamp()}",
-            timestamp=timestamp or datetime.utcnow(),
+            kill_id=f"kill-{module}-{datetime.now(timezone.utc).timestamp()}",
+            timestamp=timestamp or datetime.now(timezone.utc),
             target_module=module,
             target_instance_id="instance-001",
             kill_reason=kill_reason,
@@ -242,7 +242,7 @@ class TestEdgeCaseManager:
     @pytest.mark.asyncio
     async def test_detect_circular_dependency(self, manager):
         """Test detection of circular dependency."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Kill service-a first (depends on service-b)
         report1 = self.create_kill_report(
@@ -414,7 +414,7 @@ class TestEdgeCaseManager:
         for i in range(100):
             report = self.create_kill_report(
                 module=f"module-{i}",
-                timestamp=datetime.utcnow() - timedelta(minutes=i),
+                timestamp=datetime.now(timezone.utc) - timedelta(minutes=i),
             )
             manager._record_kill(report)
 
@@ -490,7 +490,7 @@ class TestFlappingDetection:
     @pytest.mark.asyncio
     async def test_detect_flapping(self, flap_manager):
         """Test flapping module detection."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Simulate flapping with kills spread over time
         timestamps = [

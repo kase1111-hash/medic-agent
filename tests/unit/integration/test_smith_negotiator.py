@@ -4,7 +4,7 @@ Unit tests for the SmithNegotiator module.
 
 import pytest
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, AsyncMock, patch
 
 from integration.smith_negotiator import (
@@ -51,7 +51,7 @@ class TestNegotiationMessage:
 
     def test_create_message(self):
         """Test creating a NegotiationMessage instance."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         msg = NegotiationMessage(
             message_id="msg-001",
             sender="medic",
@@ -66,7 +66,7 @@ class TestNegotiationMessage:
 
     def test_to_dict(self):
         """Test serializing message to dict."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         msg = NegotiationMessage(
             message_id="msg-001",
             sender="smith",
@@ -87,7 +87,7 @@ class TestNegotiation:
 
     def test_create_negotiation(self):
         """Test creating a Negotiation instance."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         neg = Negotiation(
             negotiation_id="neg-001",
             negotiation_type=NegotiationType.RESURRECTION_CLEARANCE,
@@ -104,7 +104,7 @@ class TestNegotiation:
 
     def test_to_dict(self):
         """Test serializing negotiation to dict."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         neg = Negotiation(
             negotiation_id="neg-001",
             negotiation_type=NegotiationType.PRE_KILL_CONSULTATION,
@@ -170,7 +170,7 @@ class TestSmithNegotiator:
         """Create a sample kill report."""
         return KillReport(
             kill_id="kill-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="test-service",
             target_instance_id="instance-001",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -300,7 +300,7 @@ class TestSmithNegotiator:
     @pytest.mark.asyncio
     async def test_process_response_approved(self, negotiator):
         """Test processing approved response."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         neg = Negotiation(
             negotiation_id="neg-001",
             negotiation_type=NegotiationType.RESURRECTION_CLEARANCE,
@@ -318,7 +318,7 @@ class TestSmithNegotiator:
     @pytest.mark.asyncio
     async def test_process_response_denied(self, negotiator):
         """Test processing denied response."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         neg = Negotiation(
             negotiation_id="neg-001",
             negotiation_type=NegotiationType.RESURRECTION_CLEARANCE,
@@ -336,7 +336,7 @@ class TestSmithNegotiator:
     @pytest.mark.asyncio
     async def test_process_response_conditional(self, negotiator):
         """Test processing conditional response."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         neg = Negotiation(
             negotiation_id="neg-001",
             negotiation_type=NegotiationType.RESURRECTION_CLEARANCE,
@@ -354,7 +354,7 @@ class TestSmithNegotiator:
     @pytest.mark.asyncio
     async def test_process_response_deferred(self, negotiator):
         """Test processing deferred response."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         neg = Negotiation(
             negotiation_id="neg-001",
             negotiation_type=NegotiationType.RESURRECTION_CLEARANCE,

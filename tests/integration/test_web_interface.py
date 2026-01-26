@@ -6,7 +6,7 @@ End-to-end tests for the web API and WebSocket functionality.
 
 import pytest
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 import json
 
@@ -104,7 +104,7 @@ def sample_kill_report():
     """Sample kill report for testing."""
     return KillReport(
         kill_id="web-test-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         target_module="test-service",
         target_instance_id="test-001",
         kill_reason=KillReason.RESOURCE_EXHAUSTION,
@@ -123,7 +123,7 @@ def sample_siem_context():
     return SIEMContextResponse(
         query_id="web-query-001",
         kill_id="web-test-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         threat_indicators=[],
         historical_behavior={"stability_score": 0.95},
         false_positive_history=5,
@@ -633,7 +633,7 @@ class TestConcurrentOperations:
         for i in range(5):
             kill_report = KillReport(
                 kill_id=f"concurrent-test-{i}",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 target_module=f"service-{i}",
                 target_instance_id=f"instance-{i}",
                 kill_reason=KillReason.RESOURCE_EXHAUSTION,
@@ -648,7 +648,7 @@ class TestConcurrentOperations:
             siem_context = SIEMContextResponse(
                 query_id=f"query-{i}",
                 kill_id=f"concurrent-test-{i}",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 threat_indicators=[],
                 historical_behavior={},
                 false_positive_history=5,

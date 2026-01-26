@@ -3,7 +3,7 @@ Unit tests for the decision engine.
 """
 
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 
 from core.decision import (
     DecisionEngine,
@@ -62,7 +62,7 @@ class TestRiskAssessor:
         no_fp_response = SIEMContextResponse(
             query_id="query-1",
             kill_id=sample_kill_report.kill_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={},
             false_positive_history=0,
@@ -76,7 +76,7 @@ class TestRiskAssessor:
         high_fp_response = SIEMContextResponse(
             query_id="query-2",
             kill_id=sample_kill_report.kill_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={},
             false_positive_history=10,
@@ -101,7 +101,7 @@ class TestRiskAssessor:
         # Create kill reports with different severities
         low_severity = KillReport(
             kill_id="kill-low",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="test",
             target_instance_id="instance",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -114,7 +114,7 @@ class TestRiskAssessor:
 
         high_severity = KillReport(
             kill_id="kill-high",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="test",
             target_instance_id="instance",
             kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -173,7 +173,7 @@ class TestObserverDecisionEngine:
         # Kill report with confirmed threat and very high confidence
         threat_report = KillReport(
             kill_id="threat-kill",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             target_module="infected-service",
             target_instance_id="instance",
             kill_reason=KillReason.THREAT_DETECTED,
