@@ -7,7 +7,7 @@ including cascading failures, rapid repeated kills, and anomalous patterns.
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set
 import uuid
@@ -188,7 +188,7 @@ class EdgeCaseManager:
         self._kill_history.append(kill_report)
 
         # Trim history
-        cutoff = datetime.utcnow() - timedelta(hours=1)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
         self._kill_history = [
             k for k in self._kill_history
             if k.timestamp > cutoff
@@ -216,7 +216,7 @@ class EdgeCaseManager:
         """Detect rapid repeated kills of the same module."""
         module = kill_report.target_module
         window = timedelta(seconds=self.config.rapid_kill_window_seconds)
-        cutoff = datetime.utcnow() - window
+        cutoff = datetime.now(timezone.utc) - window
 
         recent_kills = [
             t for t in self._module_kill_times.get(module, [])
@@ -228,7 +228,7 @@ class EdgeCaseManager:
                 edge_case_id=str(uuid.uuid4()),
                 edge_case_type=EdgeCaseType.RAPID_REPEATED_KILLS,
                 severity=EdgeCaseSeverity.HIGH,
-                detected_at=datetime.utcnow(),
+                detected_at=datetime.now(timezone.utc),
                 description=f"Module '{module}' killed {len(recent_kills)} times in {self.config.rapid_kill_window_seconds}s",
                 affected_modules=[module],
                 affected_kill_ids=[kill_report.kill_id],
@@ -248,7 +248,7 @@ class EdgeCaseManager:
     ) -> Optional[EdgeCase]:
         """Detect cascading failures across dependencies."""
         window = timedelta(seconds=self.config.cascade_window_seconds)
-        cutoff = datetime.utcnow() - window
+        cutoff = datetime.now(timezone.utc) - window
 
         recent_kills = [
             k for k in self._kill_history
@@ -270,7 +270,7 @@ class EdgeCaseManager:
                     edge_case_id=str(uuid.uuid4()),
                     edge_case_type=EdgeCaseType.CASCADING_FAILURE,
                     severity=EdgeCaseSeverity.CRITICAL,
-                    detected_at=datetime.utcnow(),
+                    detected_at=datetime.now(timezone.utc),
                     description=f"Cascading failure detected: {len(affected_modules)} modules affected",
                     affected_modules=affected_modules,
                     affected_kill_ids=[k.kill_id for k in recent_kills],
@@ -292,7 +292,7 @@ class EdgeCaseManager:
         """Detect modules that are flapping (repeatedly killed and resurrected)."""
         module = kill_report.target_module
         window = timedelta(minutes=self.config.flap_window_minutes)
-        cutoff = datetime.utcnow() - window
+        cutoff = datetime.now(timezone.utc) - window
 
         kill_times = [
             t for t in self._module_kill_times.get(module, [])
@@ -314,7 +314,7 @@ class EdgeCaseManager:
                         edge_case_id=str(uuid.uuid4()),
                         edge_case_type=EdgeCaseType.FLAPPING_MODULE,
                         severity=EdgeCaseSeverity.MEDIUM,
-                        detected_at=datetime.utcnow(),
+                        detected_at=datetime.now(timezone.utc),
                         description=f"Module '{module}' is flapping: {len(kill_times)} kills in {self.config.flap_window_minutes}min",
                         affected_modules=[module],
                         affected_kill_ids=[kill_report.kill_id],
@@ -334,7 +334,7 @@ class EdgeCaseManager:
     ) -> Optional[EdgeCase]:
         """Detect system-wide anomalies (many modules killed simultaneously)."""
         window = timedelta(seconds=self.config.system_anomaly_window_seconds)
-        cutoff = datetime.utcnow() - window
+        cutoff = datetime.now(timezone.utc) - window
 
         recent_kills = [
             k for k in self._kill_history
@@ -348,7 +348,7 @@ class EdgeCaseManager:
                 edge_case_id=str(uuid.uuid4()),
                 edge_case_type=EdgeCaseType.SYSTEM_WIDE_ANOMALY,
                 severity=EdgeCaseSeverity.CRITICAL,
-                detected_at=datetime.utcnow(),
+                detected_at=datetime.now(timezone.utc),
                 description=f"System-wide anomaly: {len(unique_modules)} different modules killed recently",
                 affected_modules=list(unique_modules),
                 affected_kill_ids=[k.kill_id for k in recent_kills],
@@ -372,7 +372,7 @@ class EdgeCaseManager:
 
         # Check if this module's dependencies have also been killed recently
         window = timedelta(seconds=120)
-        cutoff = datetime.utcnow() - window
+        cutoff = datetime.now(timezone.utc) - window
 
         recent_kills = [
             k for k in self._kill_history
@@ -388,7 +388,7 @@ class EdgeCaseManager:
                 edge_case_id=str(uuid.uuid4()),
                 edge_case_type=EdgeCaseType.CIRCULAR_DEPENDENCY,
                 severity=EdgeCaseSeverity.HIGH,
-                detected_at=datetime.utcnow(),
+                detected_at=datetime.now(timezone.utc),
                 description=f"Potential circular dependency: {kill_report.target_module} and {dep_overlap}",
                 affected_modules=[kill_report.target_module] + list(dep_overlap),
                 affected_kill_ids=[kill_report.kill_id] + [
@@ -486,7 +486,7 @@ class EdgeCaseManager:
 
         edge_case = self._active_edge_cases[edge_case_id]
         edge_case.resolved = True
-        edge_case.resolved_at = datetime.utcnow()
+        edge_case.resolved_at = datetime.now(timezone.utc)
         edge_case.resolution = resolution
 
         self._edge_case_history.append(edge_case)
@@ -532,7 +532,7 @@ class EdgeCaseManager:
 
     def get_statistics(self) -> Dict[str, Any]:
         """Get edge case statistics."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         day_ago = now - timedelta(days=1)
 
         recent = [

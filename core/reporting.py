@@ -7,7 +7,7 @@ Provides insights into decision patterns and system health.
 
 import csv
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, asdict
@@ -86,7 +86,7 @@ class ReportGenerator:
             DailySummary object
         """
         if date is None:
-            date = datetime.utcnow()
+            date = datetime.now(timezone.utc)
 
         date_str = date.strftime("%Y-%m-%d")
         logger.info(f"Generating daily summary for {date_str}")
@@ -239,7 +239,7 @@ class ReportGenerator:
             Dictionary with weekly analysis
         """
         if end_date is None:
-            end_date = datetime.utcnow()
+            end_date = datetime.now(timezone.utc)
 
         start_date = end_date - timedelta(days=7)
         logger.info(

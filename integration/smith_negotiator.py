@@ -7,7 +7,7 @@ including pre-kill consultation and resurrection coordination.
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 import json
@@ -335,7 +335,7 @@ class SmithNegotiator:
             negotiation_id=negotiation_id,
             negotiation_type=negotiation_type,
             state=NegotiationState.INITIATED,
-            initiated_at=datetime.utcnow(),
+            initiated_at=datetime.now(timezone.utc),
             initiated_by="medic",
             subject=subject,
             timeout_seconds=self.connection.timeout_seconds,
@@ -345,7 +345,7 @@ class SmithNegotiator:
         message = NegotiationMessage(
             message_id=str(uuid.uuid4()),
             sender="medic",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             message_type=negotiation_type.value,
             content=message_content,
         )
@@ -379,7 +379,7 @@ class SmithNegotiator:
             negotiation.outcome = NegotiationOutcome.APPROVED
             negotiation.outcome_details = {"mock": True}
 
-        negotiation.completed_at = datetime.utcnow()
+        negotiation.completed_at = datetime.now(timezone.utc)
         self._negotiation_history.append(negotiation)
 
         if negotiation.outcome in (NegotiationOutcome.APPROVED, NegotiationOutcome.CONDITIONAL):
@@ -432,7 +432,7 @@ class SmithNegotiator:
         message = NegotiationMessage(
             message_id=str(uuid.uuid4()),
             sender="smith",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             message_type="response",
             content=response,
         )

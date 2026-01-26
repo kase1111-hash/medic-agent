@@ -7,7 +7,7 @@ Supports both sync and async event handlers.
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set
 import uuid
@@ -87,7 +87,7 @@ class Event:
         return cls(
             event_id=str(uuid.uuid4()),
             event_type=event_type,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             source=source,
             payload=payload or {},
             correlation_id=correlation_id,
@@ -257,7 +257,7 @@ class EventBus:
         for handler in handlers:
             try:
                 handler.call_count += 1
-                handler.last_called = datetime.utcnow()
+                handler.last_called = datetime.now(timezone.utc)
 
                 if handler.is_async:
                     await handler.handler(event)

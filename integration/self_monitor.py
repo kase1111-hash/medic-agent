@@ -9,7 +9,7 @@ import asyncio
 import os
 import psutil
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 import statistics
@@ -165,19 +165,19 @@ class SelfMonitor:
 
     def record_decision_latency(self, latency_ms: float) -> None:
         """Record a decision latency measurement."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         self._latencies.append((now, latency_ms))
         self._decisions.append(now)
         self._trim_history()
 
     def record_error(self, error_type: str = "general") -> None:
         """Record an error occurrence."""
-        self._errors.append(datetime.utcnow())
+        self._errors.append(datetime.now(timezone.utc))
         self._trim_history()
 
     def _trim_history(self) -> None:
         """Trim old history data."""
-        cutoff = datetime.utcnow() - timedelta(minutes=self.config.history_window_minutes)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=self.config.history_window_minutes)
 
         self._latencies = [
             (t, v) for t, v in self._latencies
@@ -254,7 +254,7 @@ class SelfMonitor:
         """Perform a comprehensive health check."""
         import uuid
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         metrics = []
         issues = []
         recommendations = []
@@ -325,7 +325,7 @@ class SelfMonitor:
 
     def _check_latency(self) -> Metric:
         """Check decision latency."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         if not self._latencies:
             return Metric(
@@ -359,7 +359,7 @@ class SelfMonitor:
 
     def _check_error_rate(self) -> Metric:
         """Check error rate."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         total_decisions = len(self._decisions)
         total_errors = len(self._errors)
@@ -388,7 +388,7 @@ class SelfMonitor:
 
     def _check_memory(self) -> Metric:
         """Check memory usage."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         try:
             process = psutil.Process(os.getpid())
@@ -415,7 +415,7 @@ class SelfMonitor:
 
     def _check_cpu(self) -> Metric:
         """Check CPU usage."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         try:
             cpu_percent = psutil.cpu_percent(interval=0.1)
@@ -441,7 +441,7 @@ class SelfMonitor:
 
     async def _check_queue_depth(self) -> Metric:
         """Check approval queue depth."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         queue = self._components.get("approval_queue")
         if not queue:
@@ -480,7 +480,7 @@ class SelfMonitor:
     async def _check_connections(self) -> List[Metric]:
         """Check external connection status."""
         metrics = []
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Smith connection
         listener = self._components.get("listener")
@@ -537,7 +537,7 @@ class SelfMonitor:
     async def _attempt_remediation(self, health_check: HealthCheck) -> bool:
         """Attempt automatic remediation."""
         # Check rate limiting
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         hour_ago = now - timedelta(hours=1)
         self._remediations = [t for t in self._remediations if t > hour_ago]
 

@@ -8,7 +8,7 @@ with threat intelligence and historical context.
 import asyncio
 import json
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 import uuid
 
@@ -264,7 +264,7 @@ class RESTSIEMAdapter(SIEMAdapter):
                     value=f"anomaly_{kill_report.target_module}",
                     threat_score=random.uniform(0.3, 0.8),
                     source="behavior_analytics",
-                    last_seen=datetime.utcnow(),
+                    last_seen=datetime.now(timezone.utc),
                     tags=["behavioral", "automated"],
                 )
             )
@@ -286,7 +286,7 @@ class RESTSIEMAdapter(SIEMAdapter):
         return SIEMContextResponse(
             query_id=query_id,
             kill_id=kill_report.kill_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=indicators,
             historical_behavior={
                 "avg_cpu_usage": random.uniform(10, 80),
@@ -311,7 +311,7 @@ class RESTSIEMAdapter(SIEMAdapter):
         return SIEMContextResponse(
             query_id=query_id,
             kill_id=kill_report.kill_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={},
             false_positive_history=0,
@@ -329,7 +329,7 @@ class RESTSIEMAdapter(SIEMAdapter):
 
         history = []
         for i in range(days):
-            date = datetime.utcnow() - timedelta(days=i)
+            date = datetime.now(timezone.utc) - timedelta(days=i)
             history.append({
                 "date": date.isoformat(),
                 "module": module,
@@ -382,7 +382,7 @@ class MockSIEMAdapter(SIEMAdapter):
         return SIEMContextResponse(
             query_id=str(uuid.uuid4()),
             kill_id=kill_report.kill_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={},
             false_positive_history=self.default_fp_history,

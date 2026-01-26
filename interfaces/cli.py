@@ -8,7 +8,7 @@ Provides an interactive terminal UI for operators.
 import argparse
 import asyncio
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from interfaces.approval_queue import ApprovalQueue, QueueItem, QueueItemStatus
@@ -185,7 +185,7 @@ Examples:
             urgency = f"[{urgency}]"
 
         # Time remaining
-        remaining = (item.expires_at - datetime.utcnow()).total_seconds() / 60
+        remaining = (item.expires_at - datetime.now(timezone.utc)).total_seconds() / 60
         if remaining < 0:
             time_str = self.color("EXPIRED", Colors.RED)
         elif remaining < 60:

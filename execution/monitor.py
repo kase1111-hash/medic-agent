@@ -8,7 +8,7 @@ when rollback is necessary.
 import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 import uuid
@@ -205,7 +205,7 @@ class ModuleMonitor(ResurrectionMonitor):
     ) -> str:
         """Start monitoring a resurrected module."""
         monitor_id = str(uuid.uuid4())
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         session = MonitoringSession(
             monitor_id=monitor_id,
@@ -352,7 +352,7 @@ class ModuleMonitor(ResurrectionMonitor):
             logger.debug("Monitoring loop started")
 
             try:
-                while session.active and datetime.utcnow() < session.ends_at:
+                while session.active and datetime.now(timezone.utc) < session.ends_at:
                     # Perform health check
                     status = await self.check_health(
                         session.target_module,
@@ -360,7 +360,7 @@ class ModuleMonitor(ResurrectionMonitor):
                     )
 
                     # Update session
-                    session.last_health_check = datetime.utcnow()
+                    session.last_health_check = datetime.now(timezone.utc)
                     session.total_health_checks += 1
                     session.health_status = status
 
@@ -375,7 +375,7 @@ class ModuleMonitor(ResurrectionMonitor):
                             anomaly = Anomaly(
                                 anomaly_id=str(uuid.uuid4()),
                                 anomaly_type=AnomalyType.HEALTH_CHECK_FAIL,
-                                detected_at=datetime.utcnow(),
+                                detected_at=datetime.now(timezone.utc),
                                 severity=0.5 + (0.1 * session.consecutive_failures),
                                 description=f"Health check failed ({session.consecutive_failures} consecutive)",
                             )
@@ -434,7 +434,7 @@ class ModuleMonitor(ResurrectionMonitor):
             )
 
             if metrics:
-                metrics["collected_at"] = datetime.utcnow().isoformat()
+                metrics["collected_at"] = datetime.now(timezone.utc).isoformat()
                 session.metrics_history.append(metrics)
 
                 # Keep only last 100 data points
@@ -457,7 +457,7 @@ class ModuleMonitor(ResurrectionMonitor):
             anomaly = Anomaly(
                 anomaly_id=str(uuid.uuid4()),
                 anomaly_type=AnomalyType.CPU_SPIKE,
-                detected_at=datetime.utcnow(),
+                detected_at=datetime.now(timezone.utc),
                 severity=min(1.0, cpu / 100),
                 description=f"CPU usage at {cpu:.1f}%",
                 metrics={"cpu_percent": cpu},
@@ -470,7 +470,7 @@ class ModuleMonitor(ResurrectionMonitor):
             anomaly = Anomaly(
                 anomaly_id=str(uuid.uuid4()),
                 anomaly_type=AnomalyType.MEMORY_SPIKE,
-                detected_at=datetime.utcnow(),
+                detected_at=datetime.now(timezone.utc),
                 severity=min(1.0, memory / 100),
                 description=f"Memory usage at {memory:.1f}%",
                 metrics={"memory_percent": memory},
@@ -483,7 +483,7 @@ class ModuleMonitor(ResurrectionMonitor):
             anomaly = Anomaly(
                 anomaly_id=str(uuid.uuid4()),
                 anomaly_type=AnomalyType.ERROR_RATE,
-                detected_at=datetime.utcnow(),
+                detected_at=datetime.now(timezone.utc),
                 severity=min(1.0, error_rate * 2),
                 description=f"Error rate at {error_rate:.1%}",
                 metrics={"error_rate": error_rate},

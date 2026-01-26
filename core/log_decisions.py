@@ -7,7 +7,7 @@ Maintains both raw decision logs and structured storage.
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import threading
@@ -126,7 +126,7 @@ class DecisionLogger:
             decision=decision,
             kill_report=kill_report,
             siem_context=siem_context,
-            recorded_at=datetime.utcnow(),
+            recorded_at=datetime.now(timezone.utc),
         )
 
         # Write to log file immediately
@@ -159,7 +159,7 @@ class DecisionLogger:
 
     def _rotate_log_if_needed(self) -> None:
         """Rotate to a new log file if the current one is full or it's a new day."""
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         expected_file = self.log_dir / f"decisions_{today}.jsonl"
 
         if (
@@ -189,7 +189,7 @@ class DecisionLogger:
             return
 
         # Save to daily JSON file
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         storage_file = self.data_dir / f"decisions_{today}.json"
 
         existing_records = []
@@ -231,7 +231,7 @@ class DecisionLogger:
             List of DecisionRecord objects
         """
         if date is None:
-            date = datetime.utcnow()
+            date = datetime.now(timezone.utc)
 
         date_str = date.strftime("%Y-%m-%d")
         storage_file = self.data_dir / f"decisions_{date_str}.json"
@@ -264,7 +264,7 @@ class DecisionLogger:
             Dictionary with summary statistics
         """
         if date is None:
-            date = datetime.utcnow()
+            date = datetime.now(timezone.utc)
 
         records = self.get_decisions(date=date, limit=10000)
 
@@ -326,7 +326,7 @@ class DecisionLogger:
         from datetime import timedelta
 
         records = []
-        today = datetime.utcnow()
+        today = datetime.now(timezone.utc)
 
         for i in range(days):
             date = today - timedelta(days=i)
@@ -369,7 +369,7 @@ class ObserverLogger(DecisionLogger):
         kill_report: KillReport,
     ) -> None:
         """Write human-readable log entry."""
-        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
         # Determine what would have happened
         if decision.outcome == DecisionOutcome.APPROVE_AUTO:

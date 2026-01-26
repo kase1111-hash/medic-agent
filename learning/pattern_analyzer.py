@@ -7,7 +7,7 @@ high-risk modules, time-based trends, and decision accuracy.
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 import statistics
@@ -144,7 +144,7 @@ class PatternAnalyzer:
             List of detected patterns
         """
         if since is None:
-            since = datetime.utcnow() - timedelta(days=self.config.time_window_days)
+            since = datetime.now(timezone.utc) - timedelta(days=self.config.time_window_days)
 
         logger.info(f"Running pattern analysis since {since.isoformat()}")
 
@@ -192,7 +192,7 @@ class PatternAnalyzer:
                 pattern_id=str(uuid.uuid4()),
                 pattern_type=PatternType.FALSE_POSITIVE_SPIKE,
                 severity=PatternSeverity.WARNING if fp_rate < 0.5 else PatternSeverity.CRITICAL,
-                detected_at=datetime.utcnow(),
+                detected_at=datetime.now(timezone.utc),
                 description=f"High false positive rate detected: {fp_rate:.1%}",
                 confidence=min(0.95, 0.5 + len(fp_outcomes) / 100),
                 affected_modules=[m for m, _ in top_modules],
@@ -244,7 +244,7 @@ class PatternAnalyzer:
                 pattern_id=str(uuid.uuid4()),
                 pattern_type=PatternType.MODULE_INSTABILITY,
                 severity=PatternSeverity.WARNING,
-                detected_at=datetime.utcnow(),
+                detected_at=datetime.now(timezone.utc),
                 description=f"{len(unstable_modules)} modules showing instability",
                 confidence=0.8,
                 affected_modules=[m["module"] for m in unstable_modules],
@@ -289,7 +289,7 @@ class PatternAnalyzer:
                 pattern_id=str(uuid.uuid4()),
                 pattern_type=PatternType.TIME_CORRELATION,
                 severity=PatternSeverity.INFO,
-                detected_at=datetime.utcnow(),
+                detected_at=datetime.now(timezone.utc),
                 description=f"Higher failure rates detected during hours: {high_risk_hours}",
                 confidence=0.7,
                 affected_modules=[],
@@ -347,7 +347,7 @@ class PatternAnalyzer:
                 pattern_id=str(uuid.uuid4()),
                 pattern_type=PatternType.RISK_SCORE_DRIFT,
                 severity=PatternSeverity.WARNING,
-                detected_at=datetime.utcnow(),
+                detected_at=datetime.now(timezone.utc),
                 description="Risk score calibration has degraded over time",
                 confidence=0.75,
                 affected_modules=[],
@@ -393,7 +393,7 @@ class PatternAnalyzer:
                 pattern_id=str(uuid.uuid4()),
                 pattern_type=PatternType.AUTO_APPROVE_DEGRADATION,
                 severity=PatternSeverity.CRITICAL if accuracy < 0.7 else PatternSeverity.WARNING,
-                detected_at=datetime.utcnow(),
+                detected_at=datetime.now(timezone.utc),
                 description=f"Auto-approval accuracy has dropped to {accuracy:.1%}",
                 confidence=0.9,
                 affected_modules=[m for m, _ in top_failing],
@@ -439,7 +439,7 @@ class PatternAnalyzer:
                 pattern_id=str(uuid.uuid4()),
                 pattern_type=PatternType.RECOVERY_TIME_INCREASE,
                 severity=PatternSeverity.INFO,
-                detected_at=datetime.utcnow(),
+                detected_at=datetime.now(timezone.utc),
                 description=f"Module recovery times have increased from {avg_first:.0f}s to {avg_second:.0f}s",
                 confidence=0.7,
                 affected_modules=[],
@@ -471,7 +471,7 @@ class PatternAnalyzer:
                 auto_approve_eligible=False,
                 risk_trend="unknown",
                 last_failure=None,
-                last_updated=datetime.utcnow(),
+                last_updated=datetime.now(timezone.utc),
             )
 
         successes = [o for o in outcomes if o.outcome_type == OutcomeType.SUCCESS]
@@ -516,7 +516,7 @@ class PatternAnalyzer:
             auto_approve_eligible=auto_approve_eligible,
             risk_trend=trend,
             last_failure=failures[0].timestamp if failures else None,
-            last_updated=datetime.utcnow(),
+            last_updated=datetime.now(timezone.utc),
         )
 
         self._module_profiles[module] = profile

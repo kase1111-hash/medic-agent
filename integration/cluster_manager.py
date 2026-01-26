@@ -17,7 +17,7 @@ import hashlib
 import json
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set
 import uuid
@@ -241,7 +241,7 @@ class InMemoryClusterStore(ClusterStore):
 
     async def acquire_leader_lock(self, cluster_id: str, ttl_seconds: int = 30) -> bool:
         async with self._lock:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
 
             # Check if lock is expired
             if self._leader and self._leader_lock_time:
@@ -276,7 +276,7 @@ class InMemoryClusterStore(ClusterStore):
     async def get_leader(self) -> Optional[str]:
         # Check if lock is expired
         if self._leader and self._leader_lock_time:
-            if datetime.utcnow() - self._leader_lock_time > timedelta(seconds=self._leader_lock_ttl):
+            if datetime.now(timezone.utc) - self._leader_lock_time > timedelta(seconds=self._leader_lock_ttl):
                 async with self._lock:
                     self._leader = None
                     self._leader_lock_time = None
@@ -1020,7 +1020,7 @@ class ClusterManager:
             region=self.region,
             zone=self.zone,
             version="0.2.0",
-            last_heartbeat=datetime.utcnow(),
+            last_heartbeat=datetime.now(timezone.utc),
         )
 
     async def start(self) -> None:
@@ -1093,7 +1093,7 @@ class ClusterManager:
             scope=scope,
             action=action,
             data=data,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
 
         await self._store.push_sync_event(event)
@@ -1205,7 +1205,7 @@ class ClusterManager:
     async def _check_cluster_health(self) -> None:
         """Check health of all clusters in the federation."""
         clusters = await self._store.list_clusters()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         for cluster in clusters:
             if cluster.cluster_id == self.cluster_id:

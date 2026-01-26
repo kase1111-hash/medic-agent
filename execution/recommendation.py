@@ -6,7 +6,7 @@ for human review and approval workflows.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 import uuid
@@ -260,11 +260,11 @@ class RecommendationEngine:
         # Calculate expiration
         from datetime import timedelta
         timeout_hours = self._calculate_timeout(urgency)
-        expires_at = datetime.utcnow() + timedelta(hours=timeout_hours)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=timeout_hours)
 
         proposal = ResurrectionProposal(
             proposal_id=str(uuid.uuid4()),
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             kill_report=kill_report,
             siem_context=siem_context,
             decision=decision,
@@ -563,7 +563,7 @@ class RecommendationEngine:
                 # Get recent decisions with same kill reason
                 from datetime import timedelta
                 records = self.decision_logger.get_decisions(
-                    date=datetime.utcnow(),
+                    date=datetime.now(timezone.utc),
                     limit=100,
                 )
 

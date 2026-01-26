@@ -10,7 +10,7 @@ Security: Implements API key authentication and RBAC.
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set
 from collections import defaultdict
@@ -134,7 +134,7 @@ class WebSocketManager:
 
             self._connections[client_id] = websocket
             self._client_metadata[client_id] = {
-                "connected_at": datetime.utcnow().isoformat(),
+                "connected_at": datetime.now(timezone.utc).isoformat(),
                 "topics": topics or ["all"],
             }
 
@@ -154,7 +154,7 @@ class WebSocketManager:
             "type": "connected",
             "client_id": client_id,
             "topics": topics or ["all"],
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
     async def disconnect(self, client_id: str) -> None:
@@ -231,7 +231,7 @@ class WebSocketManager:
         message = {
             "type": event_type.value,
             "data": data,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
         async with self._lock:
@@ -264,7 +264,7 @@ class WebSocketManager:
 
             message = {
                 "type": WebSocketEventType.HEARTBEAT.value,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
             for client_id in client_ids:
@@ -389,7 +389,7 @@ class WebAPI:
         self.feedback_processor = feedback_processor
         self.threshold_adapter = threshold_adapter
         self.config = config or {}
-        self._start_time = datetime.utcnow()
+        self._start_time = datetime.now(timezone.utc)
 
         self.app = FastAPI(
             title="Medic Agent API",
@@ -599,7 +599,7 @@ class WebAPI:
             "success": not errors,
             "data": data,
             "meta": {
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "version": "0.1.0-alpha",
             },
             "errors": errors or [],
@@ -629,11 +629,11 @@ class WebAPI:
             if self.decision_logger:
                 checks["decision_logger"] = "ok"
 
-            uptime = (datetime.utcnow() - self._start_time).total_seconds()
+            uptime = (datetime.now(timezone.utc) - self._start_time).total_seconds()
 
             return HealthResponse(
                 status="healthy",
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.now(timezone.utc).isoformat(),
                 checks=checks,
                 version="0.1.0-alpha",
                 uptime_seconds=round(uptime, 1),
@@ -649,8 +649,8 @@ class WebAPI:
                 status = {
                     "mode": self.config.get("mode", "observer"),
                     "queue": stats,
-                    "uptime_seconds": round((datetime.utcnow() - self._start_time).total_seconds(), 1),
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "uptime_seconds": round((datetime.now(timezone.utc) - self._start_time).total_seconds(), 1),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                     "authenticated_as": current_user.key_id,
                 }
 
@@ -676,8 +676,8 @@ class WebAPI:
                 status = {
                     "mode": self.config.get("mode", "observer"),
                     "queue": stats,
-                    "uptime_seconds": round((datetime.utcnow() - self._start_time).total_seconds(), 1),
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "uptime_seconds": round((datetime.now(timezone.utc) - self._start_time).total_seconds(), 1),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                     "warning": "API running without authentication - not for production!",
                 }
 
@@ -735,7 +735,7 @@ class WebAPI:
                         "status": "approved",
                         "request_id": resurrection_request.request_id,
                         "approved_by": request.approver,
-                        "approved_at": datetime.utcnow().isoformat(),
+                        "approved_at": datetime.now(timezone.utc).isoformat(),
                     }
 
                     # Execute resurrection if resurrector is available
@@ -768,7 +768,7 @@ class WebAPI:
                         "status": "denied",
                         "denied_by": request.denier,
                         "reason": request.reason,
-                        "denied_at": datetime.utcnow().isoformat(),
+                        "denied_at": datetime.now(timezone.utc).isoformat(),
                     })
                 except ValueError as e:
                     raise HTTPException(status_code=400, detail=str(e))
@@ -812,7 +812,7 @@ class WebAPI:
                         "status": "approved",
                         "request_id": resurrection_request.request_id,
                         "approved_by": request.approver,
-                        "approved_at": datetime.utcnow().isoformat(),
+                        "approved_at": datetime.now(timezone.utc).isoformat(),
                     }
 
                     if self.resurrector:
@@ -843,7 +843,7 @@ class WebAPI:
                         "status": "denied",
                         "denied_by": request.denier,
                         "reason": request.reason,
-                        "denied_at": datetime.utcnow().isoformat(),
+                        "denied_at": datetime.now(timezone.utc).isoformat(),
                     })
                 except ValueError as e:
                     raise HTTPException(status_code=400, detail=str(e))
@@ -980,7 +980,7 @@ class WebAPI:
                 "status": "rolled_back",
                 "request_id": request_id,
                 "reason": reason,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             })
 
         # ==================== Outcomes Endpoints ====================
@@ -1273,7 +1273,7 @@ class WebAPI:
                                 await ws_manager.send_to_client(client_id, {
                                     "type": "subscribed",
                                     "topics": new_topics,
-                                    "timestamp": datetime.utcnow().isoformat(),
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
                                 })
 
                         elif action == "unsubscribe":
@@ -1283,13 +1283,13 @@ class WebAPI:
                                 await ws_manager.send_to_client(client_id, {
                                     "type": "unsubscribed",
                                     "topics": remove_topics,
-                                    "timestamp": datetime.utcnow().isoformat(),
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
                                 })
 
                         elif action == "ping":
                             await ws_manager.send_to_client(client_id, {
                                 "type": "pong",
-                                "timestamp": datetime.utcnow().isoformat(),
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
                             })
 
                         elif action == "get_status":
@@ -1302,17 +1302,17 @@ class WebAPI:
                                     "queue": stats,
                                     "connections": ws_manager.get_connection_count(),
                                     "uptime_seconds": round(
-                                        (datetime.utcnow() - self._start_time).total_seconds(), 1
+                                        (datetime.now(timezone.utc) - self._start_time).total_seconds(), 1
                                     ),
                                 },
-                                "timestamp": datetime.utcnow().isoformat(),
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
                             })
 
                     except json.JSONDecodeError:
                         await ws_manager.send_to_client(client_id, {
                             "type": "error",
                             "message": "Invalid JSON format",
-                            "timestamp": datetime.utcnow().isoformat(),
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
                         })
 
             except WebSocketDisconnect:

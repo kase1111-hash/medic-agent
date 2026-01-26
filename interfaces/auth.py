@@ -9,7 +9,7 @@ import hashlib
 import hmac
 import os
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Dict, List, Optional, Set
 from dataclasses import dataclass, field
@@ -119,7 +119,7 @@ class APIKey:
         """Check if API key is valid."""
         if not self.enabled:
             return False
-        if self.expires_at and datetime.utcnow() > self.expires_at:
+        if self.expires_at and datetime.now(timezone.utc) > self.expires_at:
             return False
         return True
 
@@ -196,7 +196,7 @@ class APIKeyStore:
             key_hash=key_hash,
             name=name,
             role=role,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             expires_at=expires_at,
         )
         self._keys[key_id] = api_key
@@ -215,7 +215,7 @@ class APIKeyStore:
             if self._constant_time_compare(key_hash, api_key.key_hash):
                 if api_key.is_valid():
                     # Update last used timestamp
-                    api_key.last_used = datetime.utcnow()
+                    api_key.last_used = datetime.now(timezone.utc)
                     return api_key
                 else:
                     logger.warning(f"Invalid or expired API key: {api_key.key_id}")

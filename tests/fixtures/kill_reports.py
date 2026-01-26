@@ -6,7 +6,7 @@ Based on the spec sheet data model definitions.
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
 
 from core.models import KillReport, KillReason, Severity
@@ -17,7 +17,7 @@ def sample_kill_report() -> KillReport:
     """Standard kill report for testing."""
     return KillReport(
         kill_id="test-kill-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         target_module="test-service",
         target_instance_id="instance-001",
         kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -35,7 +35,7 @@ def low_risk_kill_report() -> KillReport:
     """Kill report that should result in low risk assessment."""
     return KillReport(
         kill_id="test-kill-low-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         target_module="cache-service",
         target_instance_id="cache-001",
         kill_reason=KillReason.RESOURCE_EXHAUSTION,
@@ -53,7 +53,7 @@ def high_risk_kill_report() -> KillReport:
     """Kill report that should result in high risk assessment."""
     return KillReport(
         kill_id="test-kill-high-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         target_module="auth-service",
         target_instance_id="auth-001",
         kill_reason=KillReason.THREAT_DETECTED,
@@ -75,7 +75,7 @@ def critical_kill_report() -> KillReport:
     """Kill report for critical threat requiring immediate attention."""
     return KillReport(
         kill_id="test-kill-critical-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         target_module="payment-processor",
         target_instance_id="payment-001",
         kill_reason=KillReason.THREAT_DETECTED,
@@ -106,7 +106,7 @@ def policy_violation_kill_report() -> KillReport:
     """Kill report for policy violation."""
     return KillReport(
         kill_id="test-kill-policy-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         target_module="data-exporter",
         target_instance_id="exporter-001",
         kill_reason=KillReason.POLICY_VIOLATION,
@@ -127,7 +127,7 @@ def cascade_kill_report() -> KillReport:
     """Kill report for dependency cascade scenario."""
     return KillReport(
         kill_id="test-kill-cascade-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         target_module="database-proxy",
         target_instance_id="proxy-001",
         kill_reason=KillReason.DEPENDENCY_CASCADE,
@@ -155,7 +155,7 @@ def manual_override_kill_report() -> KillReport:
     """Kill report for manual override by operator."""
     return KillReport(
         kill_id="test-kill-manual-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         target_module="legacy-adapter",
         target_instance_id="adapter-001",
         kill_reason=KillReason.MANUAL_OVERRIDE,
@@ -177,7 +177,7 @@ def flapping_module_kill_report() -> KillReport:
     """Kill report for a module that has been killed multiple times recently."""
     return KillReport(
         kill_id="test-kill-flap-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         target_module="unstable-service",
         target_instance_id="unstable-001",
         kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -199,7 +199,7 @@ def old_kill_report() -> KillReport:
     """Kill report that is older (for timeout testing)."""
     return KillReport(
         kill_id="test-kill-old-001",
-        timestamp=datetime.utcnow() - timedelta(hours=2),
+        timestamp=datetime.now(timezone.utc) - timedelta(hours=2),
         target_module="old-service",
         target_instance_id="old-001",
         kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -215,7 +215,7 @@ def old_kill_report() -> KillReport:
 @pytest.fixture
 def kill_report_batch() -> List[KillReport]:
     """Batch of kill reports for bulk testing."""
-    base_time = datetime.utcnow()
+    base_time = datetime.now(timezone.utc)
     return [
         KillReport(
             kill_id=f"test-kill-batch-{i:03d}",
@@ -247,7 +247,7 @@ def kill_report_for_module(request) -> KillReport:
     module_name = getattr(request, 'param', 'test-service')
     return KillReport(
         kill_id=f"test-kill-{module_name}-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         target_module=module_name,
         target_instance_id=f"{module_name}-001",
         kill_reason=KillReason.ANOMALY_BEHAVIOR,
@@ -274,7 +274,7 @@ def create_kill_report(
 
     defaults = {
         "kill_id": kill_id or str(uuid.uuid4()),
-        "timestamp": datetime.utcnow(),
+        "timestamp": datetime.now(timezone.utc),
         "target_module": target_module,
         "target_instance_id": f"{target_module}-001",
         "kill_reason": kill_reason,

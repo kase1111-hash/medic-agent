@@ -6,7 +6,7 @@ Based on the spec sheet data model definitions.
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
 from unittest.mock import AsyncMock, MagicMock
 
@@ -19,14 +19,14 @@ def sample_siem_response() -> SIEMContextResponse:
     return SIEMContextResponse(
         query_id="query-001",
         kill_id="test-kill-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         threat_indicators=[
             ThreatIndicator(
                 indicator_type="behavior",
                 value="unusual_network_pattern",
                 threat_score=0.6,
                 source="behavioral_analytics",
-                last_seen=datetime.utcnow(),
+                last_seen=datetime.now(timezone.utc),
                 tags=["network", "anomaly"],
             ),
         ],
@@ -54,7 +54,7 @@ def low_risk_siem_response() -> SIEMContextResponse:
     return SIEMContextResponse(
         query_id="query-low-001",
         kill_id="test-kill-low-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         threat_indicators=[],
         historical_behavior={
             "avg_cpu": 30.0,
@@ -81,14 +81,14 @@ def high_risk_siem_response() -> SIEMContextResponse:
     return SIEMContextResponse(
         query_id="query-high-001",
         kill_id="test-kill-high-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         threat_indicators=[
             ThreatIndicator(
                 indicator_type="ip",
                 value="192.168.1.100",
                 threat_score=0.85,
                 source="threat_intel",
-                last_seen=datetime.utcnow(),
+                last_seen=datetime.now(timezone.utc),
                 tags=["c2", "apt", "known_bad"],
             ),
             ThreatIndicator(
@@ -96,7 +96,7 @@ def high_risk_siem_response() -> SIEMContextResponse:
                 value="abc123def456",
                 threat_score=0.9,
                 source="malware_db",
-                last_seen=datetime.utcnow(),
+                last_seen=datetime.now(timezone.utc),
                 tags=["malware", "trojan"],
             ),
             ThreatIndicator(
@@ -104,7 +104,7 @@ def high_risk_siem_response() -> SIEMContextResponse:
                 value="lateral_movement",
                 threat_score=0.8,
                 source="ueba",
-                last_seen=datetime.utcnow(),
+                last_seen=datetime.now(timezone.utc),
                 tags=["lateral", "reconnaissance"],
             ),
         ],
@@ -139,14 +139,14 @@ def critical_siem_response() -> SIEMContextResponse:
     return SIEMContextResponse(
         query_id="query-critical-001",
         kill_id="test-kill-critical-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         threat_indicators=[
             ThreatIndicator(
                 indicator_type="behavior",
                 value="ransomware_encryption",
                 threat_score=0.99,
                 source="endpoint_detection",
-                last_seen=datetime.utcnow(),
+                last_seen=datetime.now(timezone.utc),
                 tags=["ransomware", "encryption", "critical"],
             ),
             ThreatIndicator(
@@ -154,7 +154,7 @@ def critical_siem_response() -> SIEMContextResponse:
                 value="ransom_note.txt",
                 threat_score=0.95,
                 source="file_monitor",
-                last_seen=datetime.utcnow(),
+                last_seen=datetime.now(timezone.utc),
                 tags=["ransomware", "indicator"],
             ),
         ],
@@ -183,7 +183,7 @@ def no_context_siem_response() -> SIEMContextResponse:
     return SIEMContextResponse(
         query_id="query-empty-001",
         kill_id="test-kill-unknown-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         threat_indicators=[],
         historical_behavior={},
         false_positive_history=0,
@@ -200,14 +200,14 @@ def frequent_fp_siem_response() -> SIEMContextResponse:
     return SIEMContextResponse(
         query_id="query-fp-001",
         kill_id="test-kill-fp-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         threat_indicators=[
             ThreatIndicator(
                 indicator_type="behavior",
                 value="high_cpu_usage",
                 threat_score=0.5,
                 source="resource_monitor",
-                last_seen=datetime.utcnow(),
+                last_seen=datetime.now(timezone.utc),
                 tags=["resource", "cpu"],
             ),
         ],
@@ -234,19 +234,19 @@ def stale_siem_response() -> SIEMContextResponse:
     return SIEMContextResponse(
         query_id="query-stale-001",
         kill_id="test-kill-stale-001",
-        timestamp=datetime.utcnow() - timedelta(hours=1),
+        timestamp=datetime.now(timezone.utc) - timedelta(hours=1),
         threat_indicators=[
             ThreatIndicator(
                 indicator_type="ip",
                 value="10.0.0.50",
                 threat_score=0.6,
                 source="old_intel",
-                last_seen=datetime.utcnow() - timedelta(days=30),
+                last_seen=datetime.now(timezone.utc) - timedelta(days=30),
                 tags=["stale", "needs_review"],
             ),
         ],
         historical_behavior={
-            "last_seen": (datetime.utcnow() - timedelta(days=7)).isoformat(),
+            "last_seen": (datetime.now(timezone.utc) - timedelta(days=7)).isoformat(),
         },
         false_positive_history=1,
         network_context={},
@@ -265,7 +265,7 @@ def mock_siem_adapter():
     adapter.query_context.return_value = SIEMContextResponse(
         query_id="mock-query-001",
         kill_id="mock-kill-001",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         threat_indicators=[],
         historical_behavior={},
         false_positive_history=2,
@@ -314,7 +314,7 @@ def mock_siem_adapter_slow():
         return SIEMContextResponse(
             query_id="slow-query-001",
             kill_id="slow-kill-001",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             threat_indicators=[],
             historical_behavior={},
             false_positive_history=0,
@@ -345,7 +345,7 @@ def create_siem_response(
     defaults = {
         "query_id": query_id or str(uuid.uuid4()),
         "kill_id": kill_id,
-        "timestamp": datetime.utcnow(),
+        "timestamp": datetime.now(timezone.utc),
         "threat_indicators": threat_indicators or [],
         "historical_behavior": {},
         "false_positive_history": false_positive_history,
@@ -370,7 +370,7 @@ def create_threat_indicator(
         "value": value,
         "threat_score": threat_score,
         "source": "test_source",
-        "last_seen": datetime.utcnow(),
+        "last_seen": datetime.now(timezone.utc),
         "tags": [],
     }
     defaults.update(kwargs)

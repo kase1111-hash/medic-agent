@@ -7,7 +7,7 @@ Smith from killing a module if there's strong evidence it's a false positive.
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 import uuid
@@ -77,7 +77,7 @@ class VetoResponse:
     explanation: str
     conditions: Optional[Dict[str, Any]] = None
     delay_seconds: Optional[int] = None
-    responded_at: datetime = field(default_factory=datetime.utcnow)
+    responded_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -179,7 +179,7 @@ class VetoProtocol:
         if not self.config.enabled:
             return self._approve_kill(request, "Veto protocol disabled")
 
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         self._pending_requests[request.request_id] = request
 
         logger.info(
@@ -200,7 +200,7 @@ class VetoProtocol:
             response = self._make_decision(request, assessment, can_veto, limit_reason)
 
             # Record response time
-            response_time = (datetime.utcnow() - start_time).total_seconds() * 1000
+            response_time = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
             self._response_times.append(response_time)
             if len(self._response_times) > 1000:
                 self._response_times = self._response_times[-1000:]
@@ -212,8 +212,8 @@ class VetoProtocol:
 
             # Update rate limiting if vetoed
             if response.decision == VetoDecision.VETO:
-                self._vetos_this_hour.append(datetime.utcnow())
-                self._last_veto_by_module[request.module] = datetime.utcnow()
+                self._vetos_this_hour.append(datetime.now(timezone.utc))
+                self._last_veto_by_module[request.module] = datetime.now(timezone.utc)
 
             # Trigger callback
             if self.on_veto_decision:
@@ -268,7 +268,7 @@ class VetoProtocol:
                 # Check for recent successful resurrection
                 recent_success = [
                     o for o in outcomes
-                    if (datetime.utcnow() - o.timestamp).total_seconds() < 3600
+                    if (datetime.now(timezone.utc) - o.timestamp).total_seconds() < 3600
                     and o.outcome_type.value == "success"
                 ]
                 if recent_success:
@@ -310,7 +310,7 @@ class VetoProtocol:
 
     def _check_rate_limits(self, module: str) -> tuple[bool, Optional[str]]:
         """Check if we can issue a veto."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Clean old vetos
         hour_ago = now - timedelta(hours=1)
