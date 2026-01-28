@@ -6,6 +6,8 @@ restore operations, health verification, and rollback procedures.
 """
 
 import asyncio
+import os
+import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -248,7 +250,8 @@ class ModuleResurrector(Resurrector):
 
             finally:
                 self._results[request.request_id] = result
-                del self._active_requests[request.request_id]
+                # Use pop() to avoid KeyError if request was removed by another task
+                self._active_requests.pop(request.request_id, None)
 
             return result
 
@@ -393,8 +396,22 @@ class ModuleResurrector(Resurrector):
         This is a placeholder that simulates resurrection operations.
         In production, this would interface with container orchestration
         systems like Kubernetes, Docker Swarm, etc.
+
+        WARNING: This mock executor should NOT be used in production.
         """
-        logger.debug(f"Mock executor: {action} on {target}", **kwargs)
+        # Check for production environment to prevent accidental mock usage
+        environment = os.environ.get("MEDIC_ENV", "development")
+        if environment == "production":
+            logger.error(
+                "Mock executor called in production environment! "
+                "Configure a real executor (kubernetes, docker, etc.)"
+            )
+            raise RuntimeError(
+                "Mock executor cannot be used in production. "
+                "Please configure a proper resurrection backend."
+            )
+
+        logger.debug("Mock executor: %s on %s", action, target, **kwargs)
 
         # Simulate operation delay
         await asyncio.sleep(0.5)
@@ -407,7 +424,6 @@ class ModuleResurrector(Resurrector):
 
         if action == "health_check":
             # Simulate health check (90% success rate for testing)
-            import random
             return {"healthy": random.random() > 0.1}
 
         if action == "rollback":
@@ -484,7 +500,35 @@ class KubernetesResurrector(Resurrector):
         try:
             client = await self._get_client()
 
-            # Delete the old pod (Kubernetes will recreate it)
+            # First, check if the pod has an owner reference (controller)
+            # If not, deleting it will be permanent
+            pod = await asyncio.to_thread(
+                client.read_namespaced_pod,
+                name=request.target_instance_id,
+                namespace=self.namespace,
+            )
+
+            owner_refs = pod.metadata.owner_references or []
+            has_controller = any(ref.controller for ref in owner_refs)
+
+            if not has_controller:
+                logger.warning(
+                    "Pod %s has no controller (Deployment/ReplicaSet). "
+                    "Deletion will be permanent. Aborting resurrection.",
+                    request.target_instance_id,
+                )
+                completed_at = datetime.now(timezone.utc)
+                return ResurrectionResult(
+                    request_id=request.request_id,
+                    success=False,
+                    method_used=ResurrectionMethod.RESTART,
+                    started_at=started_at,
+                    completed_at=completed_at,
+                    duration_seconds=(completed_at - started_at).total_seconds(),
+                    error_message="Pod has no controller - cannot safely delete and recreate",
+                )
+
+            # Delete the old pod (Kubernetes controller will recreate it)
             await asyncio.to_thread(
                 client.delete_namespaced_pod,
                 name=request.target_instance_id,

@@ -207,19 +207,30 @@ class APIKeyStore:
         Validate an API key and return the associated APIKey object.
 
         Uses constant-time comparison to prevent timing attacks.
+        Always iterates through ALL keys to maintain constant time regardless
+        of whether a key exists, is valid, or is expired.
         """
         key_hash = self._hash_key(key_plain)
+
+        # Always iterate through all keys to prevent timing leaks
+        # that could reveal whether a key hash exists in the system
+        matched_key: Optional[APIKey] = None
 
         for api_key in self._keys.values():
             # Constant-time comparison
             if self._constant_time_compare(key_hash, api_key.key_hash):
-                if api_key.is_valid():
-                    # Update last used timestamp
-                    api_key.last_used = datetime.now(timezone.utc)
-                    return api_key
-                else:
-                    logger.warning(f"Invalid or expired API key: {api_key.key_id}")
-                    return None
+                # Don't return early - continue checking all keys
+                matched_key = api_key
+
+        # Only after checking all keys, evaluate the result
+        if matched_key is not None:
+            if matched_key.is_valid():
+                # Update last used timestamp
+                matched_key.last_used = datetime.now(timezone.utc)
+                return matched_key
+            else:
+                logger.warning("Invalid or expired API key: %s", matched_key.key_id)
+                return None
 
         logger.warning("Unknown API key attempted")
         return None

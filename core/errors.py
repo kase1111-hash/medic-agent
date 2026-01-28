@@ -155,12 +155,24 @@ class RollbackError(MedicError):
 
 
 class ValidationError(MedicError):
-    """Data validation failure."""
+    """Data validation failure.
 
-    def __init__(self, message: str, field: str, value: Any):
+    Can be raised with just a message, or with field and value for more context.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        field: Optional[str] = None,
+        value: Any = None,
+    ):
         self.field = field
         self.value = value
-        context = {"field": field, "value": str(value)[:100]}
+        context: Dict[str, Any] = {}
+        if field is not None:
+            context["field"] = field
+        if value is not None:
+            context["value"] = str(value)[:100]
         super().__init__(message, ErrorCategory.VALIDATION, recoverable=False, context=context)
 
 
@@ -440,14 +452,14 @@ class CircuitBreaker:
 
     def _transition_to_half_open(self) -> None:
         """Transition to half-open state."""
-        logger.info(f"Circuit breaker '{self.name}' half-open")
+        logger.info("Circuit breaker '%s' half-open", self.name)
         self.state = CircuitState.HALF_OPEN
         self.half_open_calls = 0
         self.success_count = 0
 
     def _transition_to_closed(self) -> None:
         """Transition to closed state."""
-        logger.info(f"Circuit breaker '{self.name}' closed")
+        logger.info("Circuit breaker '%s' closed", self.name)
         self.state = CircuitState.CLOSED
         self.failure_count = 0
         self.success_count = 0
