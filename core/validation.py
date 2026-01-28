@@ -10,6 +10,7 @@ import json
 import re
 from typing import Any, Dict
 
+from core.errors import ValidationError
 from core.logger import get_logger
 
 logger = get_logger("core.validation")
@@ -27,9 +28,8 @@ MODULE_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_\-\.]*$')
 INSTANCE_ID_PATTERN = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_\-\.]*$')
 
 
-class ValidationError(ValueError):
-    """Raised when input validation fails."""
-    pass
+# Re-export ValidationError for backward compatibility
+__all__ = ["ValidationError"]
 
 
 def validate_module_name(name: str, field_name: str = "module_name") -> str:
@@ -67,19 +67,19 @@ def validate_module_name(name: str, field_name: str = "module_name") -> str:
 
     # Check for path traversal
     if ".." in name or "/" in name or "\\" in name:
-        logger.warning(f"Path traversal attempt detected in {field_name}: {name}")
+        logger.warning("Path traversal attempt detected in %s: %s", field_name, name)
         raise ValidationError(
             f"{field_name} contains invalid characters (path traversal detected)"
         )
 
     # Check for null bytes
     if "\x00" in name:
-        logger.warning(f"Null byte detected in {field_name}: {name}")
+        logger.warning("Null byte detected in %s: %s", field_name, name)
         raise ValidationError(f"{field_name} contains null bytes")
 
     # Validate against pattern (alphanumeric, underscore, hyphen, dot)
     if not MODULE_NAME_PATTERN.match(name):
-        logger.warning(f"Invalid {field_name} pattern: {name}")
+        logger.warning("Invalid %s pattern: %s", field_name, name)
         raise ValidationError(
             f"{field_name} must start with alphanumeric and contain only "
             "alphanumeric, underscore, hyphen, or dot characters"
@@ -123,19 +123,19 @@ def validate_instance_id(instance_id: str, field_name: str = "instance_id") -> s
 
     # Check for path traversal
     if ".." in instance_id or "/" in instance_id or "\\" in instance_id:
-        logger.warning(f"Path traversal attempt in {field_name}: {instance_id}")
+        logger.warning("Path traversal attempt in %s: %s", field_name, instance_id)
         raise ValidationError(
             f"{field_name} contains invalid characters (path traversal detected)"
         )
 
     # Check for null bytes
     if "\x00" in instance_id:
-        logger.warning(f"Null byte detected in {field_name}: {instance_id}")
+        logger.warning("Null byte detected in %s: %s", field_name, instance_id)
         raise ValidationError(f"{field_name} contains null bytes")
 
     # Validate against pattern
     if not INSTANCE_ID_PATTERN.match(instance_id):
-        logger.warning(f"Invalid {field_name} pattern: {instance_id}")
+        logger.warning("Invalid %s pattern: %s", field_name, instance_id)
         raise ValidationError(
             f"{field_name} must start with alphanumeric and contain only "
             "alphanumeric, underscore, hyphen, or dot characters"
@@ -169,15 +169,15 @@ def validate_metadata(metadata: Dict[str, Any], field_name: str = "metadata") ->
     try:
         serialized = json.dumps(metadata)
     except (TypeError, ValueError) as e:
-        logger.warning(f"Non-serializable {field_name}: {e}")
+        logger.warning("Non-serializable %s: %s", field_name, e)
         raise ValidationError(f"{field_name} must be JSON-serializable: {e}")
 
     # Check size
     size_bytes = len(serialized.encode('utf-8'))
     if size_bytes > MAX_METADATA_SIZE_BYTES:
         logger.warning(
-            f"Oversized {field_name}: {size_bytes} bytes "
-            f"(max {MAX_METADATA_SIZE_BYTES})"
+            "Oversized %s: %d bytes (max %d)",
+            field_name, size_bytes, MAX_METADATA_SIZE_BYTES
         )
         raise ValidationError(
             f"{field_name} too large: {size_bytes} bytes "

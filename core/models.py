@@ -222,9 +222,35 @@ class SIEMContextResponse:
     risk_score: float  # 0.0-1.0
     recommendation: str
 
+    def __post_init__(self) -> None:
+        """Validate SIEM context response data."""
+        # Validate risk_score is within valid range
+        if not 0.0 <= self.risk_score <= 1.0:
+            raise ValueError(
+                f"risk_score must be between 0.0 and 1.0, got {self.risk_score}"
+            )
+
+        # Validate false_positive_history is non-negative
+        if self.false_positive_history < 0:
+            raise ValueError(
+                f"false_positive_history must be non-negative, got {self.false_positive_history}"
+            )
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "SIEMContextResponse":
-        """Create from dictionary."""
+        """Create from dictionary.
+
+        Note: Values from external sources are clamped to valid ranges
+        to ensure data integrity.
+        """
+        # Clamp risk_score to valid range [0.0, 1.0]
+        raw_risk_score = float(data.get("risk_score", 0.5))
+        risk_score = max(0.0, min(1.0, raw_risk_score))
+
+        # Ensure false_positive_history is non-negative
+        raw_fp_history = int(data.get("false_positive_history", 0))
+        false_positive_history = max(0, raw_fp_history)
+
         return cls(
             query_id=data["query_id"],
             kill_id=data["kill_id"],
@@ -233,10 +259,10 @@ class SIEMContextResponse:
                 ThreatIndicator.from_dict(ti) for ti in data.get("threat_indicators", [])
             ],
             historical_behavior=data.get("historical_behavior", {}),
-            false_positive_history=int(data.get("false_positive_history", 0)),
+            false_positive_history=false_positive_history,
             network_context=data.get("network_context", {}),
             user_context=data.get("user_context"),
-            risk_score=float(data.get("risk_score", 0.5)),
+            risk_score=risk_score,
             recommendation=data.get("recommendation", "unknown"),
         )
 

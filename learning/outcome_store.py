@@ -7,15 +7,67 @@ from past decisions and pattern analysis.
 
 import json
 import sqlite3
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+from functools import wraps
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 import threading
 
 from core.logger import get_logger
+
+# Type variable for generic return type
+T = TypeVar('T')
+
+
+def sqlite_retry(
+    max_retries: int = 3,
+    base_delay: float = 0.1,
+    max_delay: float = 2.0,
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
+    """
+    Decorator to retry SQLite operations on database lock errors.
+
+    Uses exponential backoff to handle concurrent access to SQLite.
+
+    Args:
+        max_retries: Maximum number of retry attempts
+        base_delay: Initial delay in seconds
+        max_delay: Maximum delay between retries
+    """
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> T:
+            last_error: Optional[Exception] = None
+            delay = base_delay
+
+            for attempt in range(max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except sqlite3.OperationalError as e:
+                    if "database is locked" in str(e) or "locked" in str(e).lower():
+                        last_error = e
+                        if attempt < max_retries:
+                            logger.warning(
+                                "SQLite database locked, retrying in %.2fs (attempt %d/%d)",
+                                delay, attempt + 1, max_retries
+                            )
+                            time.sleep(delay)
+                            # Exponential backoff with cap
+                            delay = min(delay * 2, max_delay)
+                        continue
+                    raise
+            # All retries exhausted
+            logger.error(
+                "SQLite operation failed after %d retries: %s",
+                max_retries, last_error
+            )
+            raise last_error  # type: ignore
+        return wrapper
+    return decorator
 
 logger = get_logger("learning.outcome_store")
 
@@ -273,6 +325,7 @@ class SQLiteOutcomeStore(OutcomeStore):
         """)
         conn.commit()
 
+    @sqlite_retry(max_retries=3, base_delay=0.1, max_delay=2.0)
     def store_outcome(self, outcome: ResurrectionOutcome) -> None:
         """Store a resurrection outcome."""
         conn = self._get_connection()
@@ -514,6 +567,7 @@ class SQLiteOutcomeStore(OutcomeStore):
             period_end=period_end,
         )
 
+    @sqlite_retry(max_retries=3, base_delay=0.1, max_delay=2.0)
     def update_outcome(
         self,
         outcome_id: str,

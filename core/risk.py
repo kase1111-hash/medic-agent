@@ -488,7 +488,7 @@ class AdvancedRiskAssessor(RiskAssessor):
                 self._history_cache[module] = history
                 return history
             except Exception as e:
-                logger.warning(f"Failed to get module history: {e}")
+                logger.warning("Failed to get module history: %s", e)
 
         return {"incident_count_30d": 0}
 
