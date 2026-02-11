@@ -556,12 +556,12 @@ class SQLiteOutcomeStore(OutcomeStore):
             avg_risk_score_failure=failure_stats["avg_risk"] or 0.0,
             avg_time_to_healthy=success_stats["avg_time"] or 0.0,
             auto_approve_accuracy=(
-                auto_stats["auto_success"] / auto_stats["auto_total"]
-                if auto_stats["auto_total"] > 0 else 0.0
+                (auto_stats["auto_success"] or 0) / auto_stats["auto_total"]
+                if (auto_stats["auto_total"] or 0) > 0 else 0.0
             ),
             human_override_rate=(
-                auto_stats["overrides"] / auto_stats["total"]
-                if auto_stats["total"] > 0 else 0.0
+                (auto_stats["overrides"] or 0) / auto_stats["total"]
+                if (auto_stats["total"] or 0) > 0 else 0.0
             ),
             period_start=period_start,
             period_end=period_end,

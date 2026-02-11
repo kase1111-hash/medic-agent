@@ -154,12 +154,15 @@ async def run(config: Dict[str, Any]) -> None:
     """Main event loop: listen → decide → record."""
     mode = config.get("mode", "observer")
 
-    # Initialize components
+    # Initialize components (outcome_store first — others depend on it)
+    outcome_store = create_outcome_store(config)
     listener = create_listener(config)
-    decision_engine = create_decision_engine(config)
+    decision_engine = create_decision_engine(config, outcome_store=outcome_store)
     siem_client = create_siem_client(config)
     resurrector = create_resurrector(config, mode)
-    outcome_store = create_outcome_store(config)
+
+    # Calibrate decision thresholds from historical outcomes
+    decision_engine.calibrate()
 
     # Connect to event bus
     await listener.connect()
