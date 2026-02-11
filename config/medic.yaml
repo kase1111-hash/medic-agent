@@ -10,6 +10,15 @@ smith:
     topic: "smith.events.kill_notifications"
     consumer_group: "medic-agent"
 
+siem:
+  enabled: false  # Set true to query Boundary-SIEM
+  base_url: "http://localhost:8080"
+  username: ""
+  password: ""
+  tenant_id: "default"
+  timeout: 10
+  lookback_hours: 24
+
 decision:
   confidence_threshold: 0.7
   auto_approve:
