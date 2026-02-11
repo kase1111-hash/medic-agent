@@ -7,6 +7,7 @@ Supports observer mode (log-only) and live mode (actionable decisions).
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.models import (
@@ -76,8 +77,13 @@ class DecisionEngine(ABC):
 class _BaseDecisionEngine(DecisionEngine):
     """Shared decision logic for observer and live modes."""
 
-    def __init__(self, config: Optional[DecisionConfig] = None):
+    def __init__(
+        self,
+        config: Optional[DecisionConfig] = None,
+        outcome_store: Optional[Any] = None,
+    ):
         self.config = config or DecisionConfig()
+        self.outcome_store = outcome_store
         self._decision_count = 0
         self._outcome_counts: Dict[DecisionOutcome, int] = {
             outcome: 0 for outcome in DecisionOutcome
@@ -181,7 +187,13 @@ class _BaseDecisionEngine(DecisionEngine):
 
         factors["smith_confidence"] = kill_report.confidence_score * self.config.smith_confidence_weight
         factors["siem_risk"] = siem.risk_score * self.config.siem_risk_weight
-        factors["false_positive_history"] = self._calculate_fp_factor(siem.false_positive_history)
+
+        # Combine SIEM FP count with outcome store history
+        fp_count = siem.false_positive_history
+        module_history = self._get_module_history(kill_report.target_module)
+        fp_count = max(fp_count, module_history.get("false_positive_count", 0))
+        factors["false_positive_history"] = self._calculate_fp_factor(fp_count)
+
         factors["module_criticality"] = self._calculate_criticality_factor(kill_report.target_module)
         factors["severity"] = self._calculate_severity_factor(kill_report.severity)
 
@@ -262,6 +274,14 @@ class _BaseDecisionEngine(DecisionEngine):
         if siem.false_positive_history > 2:
             confidence += 0.1
 
+        # Historical data from outcome store boosts confidence
+        history = self._get_module_history(kill_report.target_module)
+        if history.get("incident_count", 0) > 0:
+            confidence += 0.1
+            # High success rate for this module = even more confident
+            if history.get("success_rate", 0.0) > 0.8:
+                confidence += 0.05
+
         return min(1.0, max(0.0, confidence))
 
     @abstractmethod
@@ -317,6 +337,108 @@ class _BaseDecisionEngine(DecisionEngine):
 
         lines.extend(["", f"Recommended Action: {decision.recommended_action}"])
         return "\n".join(lines)
+
+    def _get_module_history(self, module: str) -> Dict[str, Any]:
+        """Get historical data for a module from the outcome store."""
+        if not self.outcome_store:
+            return {}
+
+        try:
+            outcomes = self.outcome_store.get_outcomes_by_module(module, limit=100)
+            if not outcomes:
+                return {}
+
+            success_count = sum(1 for o in outcomes if o.outcome_type.value == "success")
+            failure_count = sum(1 for o in outcomes if o.outcome_type.value == "failure")
+            total = len(outcomes)
+
+            return {
+                "incident_count": total,
+                "success_count": success_count,
+                "failure_count": failure_count,
+                "success_rate": success_count / total if total > 0 else 0.0,
+                "false_positive_count": failure_count,
+            }
+        except Exception as e:
+            logger.warning("Failed to get module history: %s", e)
+            return {}
+
+    def calibrate(self) -> None:
+        """
+        Adjust decision thresholds based on historical outcome data.
+
+        If we have enough data (50+ outcomes) and auto-approved
+        resurrections have a >95% success rate, lower the confidence
+        threshold to auto-approve more aggressively.
+
+        Called on startup and can be called periodically.
+        """
+        if not self.outcome_store:
+            logger.info("Calibration skipped: no outcome store")
+            return
+
+        try:
+            stats = self.outcome_store.get_statistics()
+        except Exception as e:
+            logger.warning("Calibration failed: %s", e)
+            return
+
+        total = stats.total_outcomes
+        if total < 50:
+            logger.info(
+                "Calibration skipped: insufficient data",
+                total_outcomes=total,
+                required=50,
+            )
+            return
+
+        # Calculate auto-approve accuracy from outcomes
+        auto_approved = [
+            o for o in self.outcome_store.get_recent_outcomes(limit=500)
+            if o.was_auto_approved
+        ]
+        if len(auto_approved) < 10:
+            logger.info(
+                "Calibration skipped: too few auto-approved outcomes",
+                auto_approved_count=len(auto_approved),
+            )
+            return
+
+        successes = sum(1 for o in auto_approved if o.outcome_type.value == "success")
+        accuracy = successes / len(auto_approved)
+
+        old_threshold = self.config.auto_approve_min_confidence
+
+        if accuracy > 0.95:
+            # High success rate — relax confidence threshold slightly
+            self.config.auto_approve_min_confidence = max(
+                self.config.auto_approve_min_confidence - 0.05, 0.6
+            )
+            logger.info(
+                "Calibration: lowered auto-approve threshold (high accuracy)",
+                accuracy=round(accuracy, 3),
+                old_threshold=round(old_threshold, 3),
+                new_threshold=round(self.config.auto_approve_min_confidence, 3),
+                auto_approved_count=len(auto_approved),
+                success_count=successes,
+            )
+        elif accuracy < 0.8:
+            # Low success rate — tighten threshold
+            self.config.auto_approve_min_confidence = min(
+                self.config.auto_approve_min_confidence + 0.05, 0.95
+            )
+            logger.info(
+                "Calibration: raised auto-approve threshold (low accuracy)",
+                accuracy=round(accuracy, 3),
+                old_threshold=round(old_threshold, 3),
+                new_threshold=round(self.config.auto_approve_min_confidence, 3),
+            )
+        else:
+            logger.info(
+                "Calibration: thresholds unchanged (acceptable accuracy)",
+                accuracy=round(accuracy, 3),
+                threshold=round(old_threshold, 3),
+            )
 
     def get_statistics(self) -> Dict[str, Any]:
         """Get decision statistics."""
@@ -380,7 +502,10 @@ class LiveDecisionEngine(_BaseDecisionEngine):
         return DecisionOutcome.PENDING_REVIEW
 
 
-def create_decision_engine(config: Dict[str, Any]) -> DecisionEngine:
+def create_decision_engine(
+    config: Dict[str, Any],
+    outcome_store: Optional[Any] = None,
+) -> DecisionEngine:
     """Factory function to create the appropriate decision engine."""
     decision_config = config.get("decision", {})
     mode = config.get("mode", "observer")
@@ -405,6 +530,6 @@ def create_decision_engine(config: Dict[str, Any]) -> DecisionEngine:
         engine_config.severity_weight = risk_config.get("severity", 0.10)
 
     if mode == "observer":
-        return ObserverDecisionEngine(engine_config)
+        return ObserverDecisionEngine(engine_config, outcome_store=outcome_store)
     else:
-        return LiveDecisionEngine(engine_config)
+        return LiveDecisionEngine(engine_config, outcome_store=outcome_store)
