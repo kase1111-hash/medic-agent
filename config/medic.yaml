@@ -1,230 +1,40 @@
-# Medic Agent Configuration
-# Version 1.0
-
 version: "1.0"
 
-# Operating mode
-# - observer: Log decisions but don't act (Phase 1)
-# - manual: Require human approval for all resurrections (Phase 2)
-# - semi_auto: Auto-approve low-risk, queue medium-risk (Phase 3)
-# - full_auto: Fully autonomous operation (Phase 5)
-mode:
-  current: "observer"
-  fallback: "observer"
+mode: "observer"  # observer | live
 
-# Smith connection settings
 smith:
   event_bus:
-    type: "redis"  # redis | rabbitmq | kafka | mock
+    type: "redis"  # redis | mock
     host: "localhost"
     port: 6379
     topic: "smith.events.kill_notifications"
-    response_topic: "medic.responses"
     consumer_group: "medic-agent"
-  veto_protocol:
-    enabled: true
-    timeout_seconds: 30
-    max_vetos_per_hour: 10
-    cooldown_seconds: 300
-    min_fp_for_veto: 3
-    max_risk_for_veto: 0.3
-    require_human: false
-  negotiation:
-    enabled: true
-    request_topic: "medic.to_smith"
-    response_topic: "smith.to_medic"
-    timeout_seconds: 30
 
-# SIEM integration
-siem:
-  adapter: "rest"  # rest | grpc | mock
-  endpoint: "http://localhost:8080/siem"
-  auth:
-    type: "api_key"
-    key_env: "SIEM_API_KEY"
-  timeout_seconds: 30
-  retry:
-    max_attempts: 3
-    backoff_seconds: 2
-
-# Decision engine settings
 decision:
-  default_timeout_minutes: 60
   confidence_threshold: 0.7
   auto_approve:
     enabled: false
-    max_risk_level: "low"
     min_confidence: 0.85
 
-# Risk assessment thresholds
 risk:
-  thresholds:
-    minimal: 0.2
-    low: 0.4
-    medium: 0.6
-    high: 0.8
   weights:
     smith_confidence: 0.30
     siem_risk_score: 0.25
     false_positive_history: 0.20
     module_criticality: 0.15
-    time_of_day: 0.10
+    severity: 0.10
 
-# Resurrection settings (Phase 2+)
 resurrection:
-  monitoring_duration_minutes: 30
-  health_check_interval_seconds: 30
+  executor: "docker"  # docker | mock
+  health_check_interval_seconds: 10
+  health_check_timeout_seconds: 60
   max_retry_attempts: 2
-  rollback:
-    enabled: true
-    auto_trigger_on_anomaly: true
-    anomaly_threshold: 0.7
 
-# Auto-resurrection settings (Phase 3)
-auto_resurrection:
-  enabled: true
-  max_per_hour: 10
-  max_per_module_per_hour: 3
-  cooldown_seconds: 300
-  min_confidence: 0.85
-  max_risk_score: 0.3
-  require_health_check: true
-  monitoring_duration_minutes: 30
-
-# Human review interface (Phase 2+)
-interfaces:
-  cli:
-    enabled: true
-  web:
-    enabled: false  # Set to true to enable web dashboard and API
-    port: 8000
-    host: "0.0.0.0"
-    # CORS origins - configure for production
-    # cors_origins:
-    #   - "https://medic-dashboard.example.com"
-    #   - "https://admin.example.com"
-    cors_origins: []  # Empty = no cross-origin requests allowed (secure default)
-    rate_limit_per_minute: 120
-    max_request_size_bytes: 10485760  # 10MB
-    # Dashboard UI is automatically enabled when web is enabled
-    # Access at: http://host:port/dashboard
-    # WebSocket endpoint: ws://host:port/ws
-    # WebSocket topics: queue, decisions, resurrections, monitors, thresholds, system, all
-  approval_queue:
-    max_pending: 100
-    timeout_hours: 24
-
-# Learning system (Phase 4+)
 learning:
-  enabled: true
   database:
-    type: "sqlite"  # sqlite | postgres | memory
+    type: "sqlite"
     path: "data/outcomes.db"
-  analysis:
-    schedule: "daily"  # daily | weekly
-    min_samples: 50
-    time_window_days: 30
-    false_positive_threshold: 0.3
-    success_rate_threshold: 0.7
-    auto_approve_accuracy_threshold: 0.9
-  threshold_adjustment:
-    enabled: false  # Requires explicit approval
-    require_approval: true
-    max_adjustment_percent: 10
-    cooldown_hours: 24
-    target_accuracy: 0.95
-  feedback:
-    auto_collect: true  # Collect from monitoring automatically
-    require_confirmation: false  # Auto-process simple feedback
 
-# Edge case handling (Phase 5)
-edge_cases:
-  rapid_kill_threshold: 3
-  rapid_kill_window_seconds: 60
-  cascade_threshold: 5
-  cascade_window_seconds: 120
-  flap_threshold: 4
-  flap_window_minutes: 30
-  system_anomaly_threshold: 10
-  auto_pause_on_critical: true
-  auto_escalate: true
-
-# Self-monitoring (Phase 5)
-self_monitoring:
-  enabled: true
-  check_interval_seconds: 60
-  history_window_minutes: 60
-  latency_warning_ms: 500
-  latency_critical_ms: 2000
-  error_rate_warning: 0.05
-  error_rate_critical: 0.15
-  queue_warning: 50
-  queue_critical: 100
-  memory_warning_percent: 70.0
-  memory_critical_percent: 90.0
-  auto_remediate: true
-
-# Logging configuration
 logging:
   level: "INFO"
   format: "text"  # json | text
-  outputs:
-    - type: "console"
-    - type: "file"
-      path: "logs/medic.log"
-      rotation: "daily"
-      retention_days: 30
-  structured_fields:
-    - "kill_id"
-    - "decision_id"
-    - "request_id"
-
-# Monitoring and metrics
-metrics:
-  enabled: true
-  exporter: "prometheus"
-  port: 9090
-  labels:
-    environment: "development"
-    service: "medic-agent"
-
-# Reports directory
-reports_dir: "reports"
-
-# Multi-cluster configuration (Phase 7)
-cluster:
-  enabled: false  # Enable for multi-cluster deployments
-  # Unique identifier for this cluster
-  # id: "cluster-001"
-  # Human-readable cluster name
-  # name: "medic-us-east-1"
-  # Endpoint where this agent's API is accessible from other clusters
-  # endpoint: "http://medic-agent.us-east-1.example.com:8000"
-  # Region and zone for topology-aware decisions
-  # region: "us-east-1"
-  # zone: "us-east-1a"
-  # Store backend for cluster state
-  store:
-    type: "memory"  # memory | redis | etcd
-    # Redis configuration (when type: redis)
-    # redis:
-    #   host: "redis.example.com"
-    #   port: 6379
-    #   db: 1
-    #   password_env: "CLUSTER_REDIS_PASSWORD"
-    # etcd configuration (when type: etcd)
-    # etcd:
-    #   endpoints:
-    #     - "https://etcd1.example.com:2379"
-    #     - "https://etcd2.example.com:2379"
-    #   cert_file: "/etc/medic/etcd-client.crt"
-    #   key_file: "/etc/medic/etcd-client.key"
-  # Sync settings
-  sync:
-    decisions: true      # Sync decisions across clusters
-    thresholds: true     # Sync threshold updates from leader
-    outcomes: false      # Sync outcome data (can be large)
-  # Leader election settings
-  election:
-    ttl_seconds: 30       # Leader lock TTL
-    retry_interval_seconds: 15  # Time between election attempts

@@ -1,23 +1,30 @@
 """
 Medic Agent Core Module
 
-Core logic for message listening, SIEM querying, and decision evaluation.
+Core logic for message listening, risk assessment, and decision evaluation.
 """
 
 from core.models import (
     KillReason,
     Severity,
     KillReport,
-    ThreatIndicator,
-    SIEMContextResponse,
+    SIEMResult,
     DecisionOutcome,
     RiskLevel,
     ResurrectionDecision,
+    ResurrectionRequest,
+    ResurrectionStatus,
+    OutcomeResult,
 )
 from core.logger import get_logger, configure_logging
 from core.listener import KillReportListener, SmithEventListener
-from core.siem_interface import SIEMAdapter, RESTSIEMAdapter
-from core.decision import DecisionEngine, ObserverDecisionEngine
+from core.decision import (
+    DecisionEngine,
+    ObserverDecisionEngine,
+    LiveDecisionEngine,
+    DecisionConfig,
+    create_decision_engine,
+)
 from core.risk import (
     RiskAssessor,
     AdvancedRiskAssessor,
@@ -26,14 +33,6 @@ from core.risk import (
     RiskThresholds,
     RiskWeights,
     create_risk_assessor,
-)
-from core.event_bus import (
-    EventBus,
-    Event,
-    EventType,
-    get_event_bus,
-    create_event_bus,
-    on_event,
 )
 from core.errors import (
     MedicError,
@@ -48,16 +47,6 @@ from core.errors import (
     CircuitBreaker,
     CircuitState,
     with_retry,
-    create_siem_retry_policy,
-    create_smith_retry_policy,
-    create_siem_circuit_breaker,
-    create_smith_circuit_breaker,
-)
-from core.metrics import (
-    MedicMetrics,
-    MetricType,
-    create_metrics,
-    get_metrics,
 )
 
 __all__ = [
@@ -65,23 +54,25 @@ __all__ = [
     "KillReason",
     "Severity",
     "KillReport",
-    "ThreatIndicator",
-    "SIEMContextResponse",
+    "SIEMResult",
     "DecisionOutcome",
     "RiskLevel",
     "ResurrectionDecision",
+    "ResurrectionRequest",
+    "ResurrectionStatus",
+    "OutcomeResult",
     # Logger
     "get_logger",
     "configure_logging",
     # Listener
     "KillReportListener",
     "SmithEventListener",
-    # SIEM
-    "SIEMAdapter",
-    "RESTSIEMAdapter",
     # Decision
     "DecisionEngine",
     "ObserverDecisionEngine",
+    "LiveDecisionEngine",
+    "DecisionConfig",
+    "create_decision_engine",
     # Risk
     "RiskAssessor",
     "AdvancedRiskAssessor",
@@ -90,11 +81,17 @@ __all__ = [
     "RiskThresholds",
     "RiskWeights",
     "create_risk_assessor",
-    # Event Bus
-    "EventBus",
-    "Event",
-    "EventType",
-    "get_event_bus",
-    "create_event_bus",
-    "on_event",
+    # Errors
+    "MedicError",
+    "ErrorCategory",
+    "SmithConnectionError",
+    "SIEMQueryError",
+    "DecisionError",
+    "ResurrectionError",
+    "ValidationError",
+    "ConfigurationError",
+    "RetryPolicy",
+    "CircuitBreaker",
+    "CircuitState",
+    "with_retry",
 ]

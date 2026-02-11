@@ -1,3 +1,0 @@
-"""
-Medic Agent Test Suite
-"""
