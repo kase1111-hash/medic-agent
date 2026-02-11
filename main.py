@@ -27,6 +27,7 @@ from core.listener import KillReportListener, create_listener
 from core.logger import configure_logging, get_logger
 from core.models import DecisionOutcome, KillReport, ResurrectionDecision
 from core.resurrector import Resurrector, create_resurrector
+from core.siem import SIEMClient, create_siem_client
 from learning.outcome_store import (
     FeedbackSource,
     OutcomeStore,
@@ -84,14 +85,16 @@ def build_outcome(
 async def process_kill_report(
     kill_report: KillReport,
     decision_engine: DecisionEngine,
+    siem_client: SIEMClient,
     resurrector: Resurrector,
     outcome_store: OutcomeStore,
     listener: KillReportListener,
 ) -> None:
     """Process a single kill report through the full pipeline."""
 
-    # 1. Make decision
-    decision = decision_engine.should_resurrect(kill_report)
+    # 1. Enrich with SIEM context, then make decision
+    siem_result = siem_client.enrich(kill_report)
+    decision = decision_engine.should_resurrect(kill_report, siem_result)
 
     # 2. Act on decision
     resurrection_result = None
@@ -112,8 +115,13 @@ async def process_kill_report(
             risk_score=round(decision.risk_score, 3),
         )
 
-    # 3. Record outcome (with resurrection result if available)
+    # 3. Record outcome (with SIEM + resurrection data)
     outcome = build_outcome(kill_report, decision)
+    outcome.metadata["siem"] = {
+        "risk_score": siem_result.risk_score,
+        "false_positives": siem_result.false_positive_history,
+        "recommendation": siem_result.recommendation,
+    }
     if resurrection_result is not None:
         if resurrection_result.success:
             outcome.outcome_type = OutcomeType.SUCCESS
@@ -149,6 +157,7 @@ async def run(config: Dict[str, Any]) -> None:
     # Initialize components
     listener = create_listener(config)
     decision_engine = create_decision_engine(config)
+    siem_client = create_siem_client(config)
     resurrector = create_resurrector(config, mode)
     outcome_store = create_outcome_store(config)
 
@@ -173,6 +182,7 @@ async def run(config: Dict[str, Any]) -> None:
                 await process_kill_report(
                     kill_report=kill_report,
                     decision_engine=decision_engine,
+                    siem_client=siem_client,
                     resurrector=resurrector,
                     outcome_store=outcome_store,
                     listener=listener,
