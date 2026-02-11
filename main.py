@@ -26,6 +26,7 @@ from core.decision import DecisionEngine, create_decision_engine
 from core.listener import KillReportListener, create_listener
 from core.logger import configure_logging, get_logger
 from core.models import DecisionOutcome, KillReport, ResurrectionDecision
+from core.resurrector import Resurrector, create_resurrector
 from learning.outcome_store import (
     FeedbackSource,
     OutcomeStore,
@@ -83,29 +84,19 @@ def build_outcome(
 async def process_kill_report(
     kill_report: KillReport,
     decision_engine: DecisionEngine,
+    resurrector: Resurrector,
     outcome_store: OutcomeStore,
     listener: KillReportListener,
-    mode: str,
 ) -> None:
     """Process a single kill report through the full pipeline."""
 
     # 1. Make decision
     decision = decision_engine.should_resurrect(kill_report)
 
-    # 2. Act on decision (Phase 2 adds real resurrection here)
+    # 2. Act on decision
+    resurrection_result = None
     if decision.outcome == DecisionOutcome.APPROVE_AUTO:
-        if mode == "observer":
-            logger.info(
-                "OBSERVER: Would auto-resurrect (no action taken)",
-                kill_id=kill_report.kill_id,
-                target_module=kill_report.target_module,
-            )
-        else:
-            logger.info(
-                "APPROVED: Resurrection approved — awaiting executor (Phase 2)",
-                kill_id=kill_report.kill_id,
-                target_module=kill_report.target_module,
-            )
+        resurrection_result = resurrector.resurrect(kill_report, decision)
     elif decision.outcome == DecisionOutcome.DENY:
         logger.info(
             "DENIED: Resurrection denied",
@@ -121,8 +112,21 @@ async def process_kill_report(
             risk_score=round(decision.risk_score, 3),
         )
 
-    # 3. Record outcome
+    # 3. Record outcome (with resurrection result if available)
     outcome = build_outcome(kill_report, decision)
+    if resurrection_result is not None:
+        if resurrection_result.success:
+            outcome.outcome_type = OutcomeType.SUCCESS
+            outcome.health_score_after = 1.0 if resurrection_result.health_status == "healthy" else 0.8
+        else:
+            outcome.outcome_type = OutcomeType.FAILURE
+            outcome.health_score_after = 0.0
+        outcome.time_to_healthy = resurrection_result.duration_seconds
+        outcome.metadata["resurrection"] = {
+            "container_id": resurrection_result.container_id,
+            "health_status": resurrection_result.health_status,
+            "error": resurrection_result.error,
+        }
     outcome_store.store_outcome(outcome)
 
     # 4. Acknowledge message
@@ -145,12 +149,8 @@ async def run(config: Dict[str, Any]) -> None:
     # Initialize components
     listener = create_listener(config)
     decision_engine = create_decision_engine(config)
+    resurrector = create_resurrector(config, mode)
     outcome_store = create_outcome_store(config)
-
-    # Wire outcome store into risk assessor if using the decision engine
-    # that has a risk config (for false positive history lookups)
-    if hasattr(decision_engine, 'config'):
-        logger.debug("Outcome store available for history lookups")
 
     # Connect to event bus
     await listener.connect()
@@ -173,9 +173,9 @@ async def run(config: Dict[str, Any]) -> None:
                 await process_kill_report(
                     kill_report=kill_report,
                     decision_engine=decision_engine,
+                    resurrector=resurrector,
                     outcome_store=outcome_store,
                     listener=listener,
-                    mode=mode,
                 )
                 processed += 1
             except Exception as e:
