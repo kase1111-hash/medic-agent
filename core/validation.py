@@ -5,7 +5,6 @@ Security-focused input validation for user-provided data.
 Prevents injection attacks, path traversal, and resource exhaustion.
 """
 
-import hmac
 import json
 import re
 from typing import Any, Dict
@@ -291,10 +290,10 @@ def validate_dependency_list(dependencies: list, field_name: str = "dependencies
 
 def validate_confidence_score(score: float, field_name: str = "confidence_score") -> float:
     """
-    Validate a confidence score.
+    Validate a confidence score is within [0.0, 1.0].
 
     Args:
-        score: The score to validate (should be 0.0-1.0)
+        score: The score to validate
         field_name: Name of the field (for error messages)
 
     Returns:
@@ -302,35 +301,13 @@ def validate_confidence_score(score: float, field_name: str = "confidence_score"
 
     Raises:
         ValidationError: If validation fails
-
-    Security:
-        - Uses constant-time comparison to prevent timing attacks
-        - Prevents information leakage about valid score ranges
     """
     if not isinstance(score, (int, float)):
         raise ValidationError(f"{field_name} must be a number")
 
-    # Convert to float for consistent comparison
     score_float = float(score)
 
-    # Constant-time range validation to prevent timing attacks
-    # Convert floats to fixed-precision strings for constant-time comparison
-    score_str = f"{score_float:.10f}"
-    min_str = f"{0.0:.10f}"
-    max_str = f"{1.0:.10f}"
-
-    # Always perform both comparisons to avoid timing leaks
-    is_gte_min = score_float >= 0.0
-    is_lte_max = score_float <= 1.0
-
-    # Use constant-time comparison for the final check
-    # This prevents timing attacks that could infer valid ranges
-    valid_range = hmac.compare_digest(
-        str(is_gte_min and is_lte_max).encode('utf-8'),
-        b'True'
-    )
-
-    if not valid_range:
+    if not 0.0 <= score_float <= 1.0:
         raise ValidationError(
             f"{field_name} must be between 0.0 and 1.0, got {score}"
         )

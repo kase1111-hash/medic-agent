@@ -1,156 +1,45 @@
 [project]
 name = "medic-agent"
-version = "0.1.0-alpha"
-description = "Autonomous Resilience Layer for Smith Kill Events - AI security monitoring and self-healing agent"
+version = "0.2.0-alpha"
+description = "Autonomous resilience layer for AI agent kill event evaluation and resurrection"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
 authors = [
     {name = "Kase Branham"}
 ]
-keywords = [
-    "ai-security",
-    "autonomous-agent",
-    "self-healing",
-    "security-monitoring",
-    "agent-os",
-    "siem",
-    "threat-detection",
-    "resilience",
-    "observability"
-]
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
-    "Intended Audience :: System Administrators",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Topic :: Security",
-    "Topic :: System :: Monitoring",
-    "Topic :: System :: Systems Administration",
-    "Typing :: Typed"
-]
 
 dependencies = [
     "pyyaml>=6.0.1",
-    "aiohttp>=3.9.0",
-    "httpx>=0.25.0",
     "redis>=5.0.0",
     "structlog>=23.2.0",
-    "python-dateutil>=2.8.2",
-    "fastapi>=0.104.0",
-    "uvicorn[standard]>=0.24.0",
-    "pydantic>=2.5.0",
+    "httpx>=0.25.0",
     "aiosqlite>=0.19.0",
-    "prometheus-client>=0.19.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
-    "pytest-cov>=4.1.0",
-    "black>=23.0.0",
-    "isort>=5.12.0",
-    "mypy>=1.7.0",
     "ruff>=0.1.0",
-]
-rabbitmq = [
-    "aio-pika>=9.3.0",
-]
-kafka = [
-    "aiokafka>=0.10.0",
-]
-analytics = [
-    "pandas>=2.1.0",
-    "scikit-learn>=1.3.0",
-    "numpy>=1.26.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/kase1111-hash/medic-agent"
-Documentation = "https://github.com/kase1111-hash/medic-agent/tree/main/docs"
 Repository = "https://github.com/kase1111-hash/medic-agent.git"
 Issues = "https://github.com/kase1111-hash/medic-agent/issues"
-Changelog = "https://github.com/kase1111-hash/medic-agent/blob/main/CHANGELOG.md"
-
-[project.scripts]
-medic-agent = "main:main"
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["core*", "execution*", "interfaces*", "learning*", "integration*"]
-
-[tool.black]
-line-length = 88
-target-version = ["py311"]
-include = '\.pyi?$'
-exclude = '''
-/(
-    \.eggs
-  | \.git
-  | \.mypy_cache
-  | \.pytest_cache
-  | \.venv
-  | venv
-  | build
-  | dist
-)/
-'''
-
-[tool.isort]
-profile = "black"
-line_length = 88
-known_first_party = ["core", "execution", "interfaces", "learning", "integration"]
-skip = [".venv", "venv", ".git"]
-
-[tool.mypy]
-python_version = "3.11"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-ignore_missing_imports = true
-exclude = [
-    "tests/",
-    "venv/",
-    ".venv/"
-]
+include = ["core*", "execution*", "learning*"]
 
 [tool.ruff]
 line-length = 88
 target-version = "py311"
-select = [
-    "E",   # pycodestyle errors
-    "W",   # pycodestyle warnings
-    "F",   # pyflakes
-    "I",   # isort
-    "B",   # flake8-bugbear
-    "C4",  # flake8-comprehensions
-    "UP",  # pyupgrade
-    "S",   # flake8-bandit (security)
-]
-ignore = [
-    "E501",  # line too long (handled by black)
-    "S101",  # assert usage (allowed in tests)
-]
-exclude = [
-    ".venv",
-    "venv",
-    ".git",
-    "__pycache__",
-    "build",
-    "dist"
-]
-
-[tool.ruff.per-file-ignores]
-"tests/*" = ["S101"]
+select = ["E", "W", "F", "I", "B", "UP"]
+exclude = [".venv", "venv", "__pycache__", "build", "dist"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"
@@ -158,24 +47,4 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
-markers = [
-    "slow: marks tests as slow",
-    "integration: marks tests as integration tests",
-    "security: marks tests as security tests",
-    "performance: marks tests as performance tests",
-]
 addopts = "-v --tb=short"
-
-[tool.coverage.run]
-source = ["core", "execution", "interfaces", "learning", "integration"]
-branch = true
-omit = ["tests/*", "*/__pycache__/*"]
-
-[tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "raise NotImplementedError",
-    "if TYPE_CHECKING:",
-    "if __name__ == .__main__.:"
-]

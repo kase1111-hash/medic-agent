@@ -1,7 +1,7 @@
 """
 Medic Agent Data Models
 
-Core data structures for kill reports, SIEM responses, and resurrection decisions.
+Core data structures for kill reports and resurrection decisions.
 
 Security: All user-provided input is validated to prevent injection attacks,
 path traversal, and resource exhaustion.
@@ -20,7 +20,6 @@ from core.validation import (
     validate_evidence_list,
     validate_dependency_list,
     validate_confidence_score,
-    ValidationError,
 )
 
 
@@ -45,11 +44,11 @@ class Severity(Enum):
 
 class DecisionOutcome(Enum):
     """Possible outcomes of a resurrection decision."""
-    APPROVE_AUTO = "approve_auto"           # Auto-resurrect (low risk)
-    APPROVE_MANUAL = "approve_manual"       # Approved by human
-    PENDING_REVIEW = "pending_review"       # Awaiting human review
-    DENY = "deny"                           # Do not resurrect
-    DEFER = "defer"                         # Need more information
+    APPROVE_AUTO = "approve_auto"
+    APPROVE_MANUAL = "approve_manual"
+    PENDING_REVIEW = "pending_review"
+    DENY = "deny"
+    DEFER = "defer"
 
 
 class RiskLevel(Enum):
@@ -88,11 +87,11 @@ class ResurrectionStatus(Enum):
 
 class OutcomeResult(Enum):
     """Final outcome of a resurrection attempt."""
-    SUCCESS = "success"               # Resurrection successful, stable
-    PARTIAL_SUCCESS = "partial"       # Some issues but acceptable
-    FAILURE = "failure"               # Resurrection failed
-    RE_KILLED = "re_killed"           # Smith killed it again
-    ROLLBACK = "rollback"             # Had to rollback
+    SUCCESS = "success"
+    PARTIAL_SUCCESS = "partial"
+    FAILURE = "failure"
+    RE_KILLED = "re_killed"
+    ROLLBACK = "rollback"
 
 
 @dataclass
@@ -117,22 +116,11 @@ class KillReport:
 
     def __post_init__(self):
         """Validate kill report data for security and correctness."""
-        # Validate module name (prevents path traversal, injection)
         self.target_module = validate_module_name(self.target_module, "target_module")
-
-        # Validate instance ID (prevents path traversal, injection)
         self.target_instance_id = validate_instance_id(self.target_instance_id, "target_instance_id")
-
-        # Validate confidence score
         self.confidence_score = validate_confidence_score(self.confidence_score, "confidence_score")
-
-        # Validate evidence list (prevents resource exhaustion)
         self.evidence = validate_evidence_list(self.evidence, "evidence")
-
-        # Validate dependencies (prevents resource exhaustion, validates format)
         self.dependencies = validate_dependency_list(self.dependencies, "dependencies")
-
-        # Validate metadata (prevents resource exhaustion)
         self.metadata = validate_metadata(self.metadata, "metadata")
 
     @classmethod
@@ -170,116 +158,16 @@ class KillReport:
 
 
 @dataclass
-class ThreatIndicator:
-    """Individual threat indicator from SIEM."""
-    indicator_type: str  # IP, hash, domain, behavior, etc.
-    value: str
-    threat_score: float  # 0.0-1.0 normalized score
-    source: str          # Intel source name
-    last_seen: datetime
-    tags: List[str] = field(default_factory=list)
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ThreatIndicator":
-        """Create from dictionary."""
-        return cls(
-            indicator_type=data["indicator_type"],
-            value=data["value"],
-            threat_score=float(data["threat_score"]),
-            source=data["source"],
-            last_seen=datetime.fromisoformat(data["last_seen"].replace("Z", "+00:00")),
-            tags=data.get("tags", []),
-        )
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "indicator_type": self.indicator_type,
-            "value": self.value,
-            "threat_score": self.threat_score,
-            "source": self.source,
-            "last_seen": self.last_seen.isoformat(),
-            "tags": self.tags,
-        }
-
-
-@dataclass
-class SIEMContextResponse:
+class SIEMResult:
     """
-    Enriched context from SIEM query.
+    Minimal SIEM enrichment result.
 
-    Contains threat indicators, historical data, and risk assessment
-    for a specific kill event.
+    Placeholder for Phase 1 (no SIEM). Will be expanded in Phase 3
+    when a real SIEM integration is wired in.
     """
-    query_id: str
-    kill_id: str
-    timestamp: datetime
-    threat_indicators: List[ThreatIndicator]
-    historical_behavior: Dict[str, Any]
-    false_positive_history: int  # Prior FP count for this module
-    network_context: Dict[str, Any]
-    user_context: Optional[Dict[str, Any]]
-    risk_score: float  # 0.0-1.0
-    recommendation: str
-
-    def __post_init__(self) -> None:
-        """Validate SIEM context response data."""
-        # Validate risk_score is within valid range
-        if not 0.0 <= self.risk_score <= 1.0:
-            raise ValueError(
-                f"risk_score must be between 0.0 and 1.0, got {self.risk_score}"
-            )
-
-        # Validate false_positive_history is non-negative
-        if self.false_positive_history < 0:
-            raise ValueError(
-                f"false_positive_history must be non-negative, got {self.false_positive_history}"
-            )
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "SIEMContextResponse":
-        """Create from dictionary.
-
-        Note: Values from external sources are clamped to valid ranges
-        to ensure data integrity.
-        """
-        # Clamp risk_score to valid range [0.0, 1.0]
-        raw_risk_score = float(data.get("risk_score", 0.5))
-        risk_score = max(0.0, min(1.0, raw_risk_score))
-
-        # Ensure false_positive_history is non-negative
-        raw_fp_history = int(data.get("false_positive_history", 0))
-        false_positive_history = max(0, raw_fp_history)
-
-        return cls(
-            query_id=data["query_id"],
-            kill_id=data["kill_id"],
-            timestamp=datetime.fromisoformat(data["timestamp"].replace("Z", "+00:00")),
-            threat_indicators=[
-                ThreatIndicator.from_dict(ti) for ti in data.get("threat_indicators", [])
-            ],
-            historical_behavior=data.get("historical_behavior", {}),
-            false_positive_history=false_positive_history,
-            network_context=data.get("network_context", {}),
-            user_context=data.get("user_context"),
-            risk_score=risk_score,
-            recommendation=data.get("recommendation", "unknown"),
-        )
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "query_id": self.query_id,
-            "kill_id": self.kill_id,
-            "timestamp": self.timestamp.isoformat(),
-            "threat_indicators": [ti.to_dict() for ti in self.threat_indicators],
-            "historical_behavior": self.historical_behavior,
-            "false_positive_history": self.false_positive_history,
-            "network_context": self.network_context,
-            "user_context": self.user_context,
-            "risk_score": self.risk_score,
-            "recommendation": self.recommendation,
-        }
+    risk_score: float = 0.5
+    false_positive_history: int = 0
+    recommendation: str = "unknown"
 
 
 @dataclass
@@ -413,43 +301,4 @@ class ResurrectionRequest:
             "rollback_reason": self.rollback_reason,
             "monitoring_duration_minutes": self.monitoring_duration_minutes,
             "health_checks": self.health_checks,
-        }
-
-
-@dataclass
-class OutcomeRecord:
-    """
-    Learning system outcome for analysis.
-
-    Records the final result of a resurrection attempt for pattern
-    analysis and threshold adjustment.
-    """
-    outcome_id: str
-    request_id: str
-    decision_id: str
-    kill_id: str
-    result: OutcomeResult
-    recorded_at: datetime
-    time_to_stable: Optional[int] = None  # Seconds until stable (if success)
-    post_resurrection_metrics: Dict[str, Any] = field(default_factory=dict)
-    smith_feedback: Optional[str] = None
-    human_feedback: Optional[str] = None
-    lessons_learned: List[str] = field(default_factory=list)
-    should_adjust_threshold: bool = False
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "outcome_id": self.outcome_id,
-            "request_id": self.request_id,
-            "decision_id": self.decision_id,
-            "kill_id": self.kill_id,
-            "result": self.result.value,
-            "recorded_at": self.recorded_at.isoformat(),
-            "time_to_stable": self.time_to_stable,
-            "post_resurrection_metrics": self.post_resurrection_metrics,
-            "smith_feedback": self.smith_feedback,
-            "human_feedback": self.human_feedback,
-            "lessons_learned": self.lessons_learned,
-            "should_adjust_threshold": self.should_adjust_threshold,
         }
