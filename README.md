@@ -45,16 +45,27 @@ Smith kill report → Redis Stream → Medic Agent
 ### Install and Run
 
 ```bash
-pip install pyyaml redis structlog httpx docker fastapi uvicorn
+pip install -r requirements.txt
 
 # Observer mode with mock listener (no Redis needed)
 python main.py --mock
 
 # Live mode with Redis
 python main.py --mode live
+
+# Custom config file
+python main.py --config path/to/config.yaml
 ```
 
 The API starts automatically on port 8000.
+
+### Docker Compose
+
+```bash
+docker compose up -d
+```
+
+This starts the agent in observer mode alongside Redis. Edit `docker-compose.yaml` environment variables to change the mode.
 
 ### Configuration
 
@@ -127,8 +138,8 @@ medic-agent/
 ├── api.py                  # FastAPI app (4 endpoints)
 ├── core/
 │   ├── listener.py         # Redis Streams + mock listener
-│   ├── decision.py         # Decision engine (observer/live modes)
-│   ├── risk.py             # AdvancedRiskAssessor (not yet wired)
+│   ├── decision.py         # Decision engine (observer/live modes, inline risk scoring)
+│   ├── risk.py             # AdvancedRiskAssessor (standalone, richer analysis)
 │   ├── siem.py             # Boundary-SIEM HTTP client
 │   ├── resurrector.py      # Docker SDK container restart + dry-run
 │   ├── models.py           # KillReport, SIEMResult, Decision, etc.
@@ -143,8 +154,12 @@ medic-agent/
 │   ├── test_risk_scoring.py # Risk math + calibration tests
 │   ├── test_outcome_store.py # SQLite + InMemory round-trip
 │   └── test_api.py         # API endpoint tests
-└── config/
-    └── medic.yaml          # Main configuration
+├── config/
+│   └── medic.yaml          # Main configuration
+├── Dockerfile              # Multi-stage build (Python 3.11-slim)
+├── docker-compose.yaml     # Dev environment (agent + Redis)
+├── pyproject.toml          # Project metadata, dependencies, tool config
+└── requirements.txt        # Pinned dependency versions
 ```
 
 ## Testing
